@@ -1,0 +1,365 @@
+﻿Imports System.Data.SqlClient
+Imports System.Globalization
+
+Public Class GTSSObj
+    Public Property newSeed As Integer
+    Public Property portCode As String
+    Dim tranCode As String
+    Dim secType As String
+    Public Property curr As String
+    Public Property tradeDate As String
+    Public Property settleDate As String
+    Public Property settleDate2 As String
+    Dim srcDestType As String
+    Public Property localAmount As String
+    Public Property usdAmount As String
+    Public Property fxRate As String
+    Public Property curr2 As String
+    Public Property bicCode As String
+    Public Property brokerCode As String
+    Public Property deliveryAgent As String
+    Public Property receivingAgent As String
+    Public Property receivingAgent2 As String
+    Public Property fixingDate As String
+    Dim moxyCon As String
+    Public Property cashTran As Boolean ' if true should not be included in GTSS file
+    Public Property excludedCurrency As Boolean ' if currency is part of the excluded list do not included it into GTSS file
+
+    Public Sub New(ByVal portCode As String, tranCode As String, secType As String,
+                                        tradeDate As String, settleDate As String, srcDestType As String,
+                                        localAmount As String, usdAmount As String, brokerCode As String,
+                                        connStr As String)
+        ' Initialize with a specific parms
+        Me.portCode = portCode.Replace("fc", String.Empty)
+        Me.tranCode = tranCode
+        Me.secType = secType
+        Me.tradeDate = tradeDate
+        Me.settleDate = settleDate
+        Me.srcDestType = srcDestType
+        Me.localAmount = localAmount.Trim()
+        Me.usdAmount = usdAmount.Trim()
+        Me.brokerCode = brokerCode
+        Me.moxyCon = connStr
+
+        Try
+
+            If Left(secType, 2) = "ca" Or Left(srcDestType, 2) = "ca" Then
+
+                'If secType.IndexOf("ca") <> -1 Or srcDestType.IndexOf("ca") <> -1 Then
+                ' check for cash transaction
+                cashTran = True
+
+            Else
+                ' source and dest currencies
+                'curr = FXConManager.getISOCurrency(secType.Replace("fc", String.Empty).Replace("ca", String.Empty), moxyCon)
+                'curr2 = FXConManager.getISOCurrency(srcDestType.Replace("fc", String.Empty).Replace("ca", String.Empty), moxyCon)
+
+                curr = FXConManager.getISOCurrency(Right(secType, 2), moxyCon)
+                curr2 = FXConManager.getISOCurrency(Right(srcDestType, 2), moxyCon)
+
+                If isExcludedCurrency(curr) Or isExcludedCurrency(curr2) Then
+                    excludedCurrency = True
+                End If
+
+                ' calc fx rate
+                fxRate = Math.Round(CDbl(localAmount) / CDbl(usdAmount), 9).ToString("##0.000000000")
+                Dim flipRateCurrencies As String = FXConManager.ReadConfigSetting("FlipRateCurrencies")
+                If flipRateCurrencies.IndexOf(curr) <> -1 Then
+                    fxRate = 1 / CDbl(fxRate).ToString("##0.000000000")
+                End If
+
+                newSeed = FXConManager.getTranIDSeed(moxyCon)
+
+                ' when transcode is ss (Short Sell) swap localAmount and usdAmount
+                If tranCode = "ss" Then
+                    Dim tmp As String = Me.localAmount
+                    Me.localAmount = Me.usdAmount
+                    Me.usdAmount = tmp
+                    tmp = curr
+                    curr = curr2
+                    curr2 = tmp
+
+                End If
+
+                bicCode = getBICCode(brokerCode)
+
+                'get delivery agen
+                deliveryAgent = getAgent(brokerCode, curr)
+
+                ' get receiving agent
+                receivingAgent2 = getAgent(brokerCode, curr2)
+
+                ' get fixing date 
+                If FXConManager.ReadConfigSetting("FixingDateCurrencies").IndexOf(curr) <> -1 Then
+                    'fixingDate = getFixingDate(curr, settleDate2)
+                    Dim dateValue As DateTime
+                    If Date.TryParseExact(settleDate, "mmddyyyy", CultureInfo.InvariantCulture,
+                                 DateTimeStyles.None, dateValue) Then
+                        fixingDate = getFixingDate(curr, dateValue)
+                    Else
+                        fixingDate = String.Empty
+                    End If
+
+
+                End If
+
+            End If
+
+        Catch ex As Exception
+            Throw New Exception("GTSSObj Constructor: " + ex.Message)
+        End Try
+
+    End Sub
+
+
+    Protected Function getFixingDate(ByVal cur As String, ByVal testDate As Date) As String
+        'This function calculates the Fixing date as two business days before the settle date
+        Dim wday As Integer
+        Dim bdays As Integer = 2
+        Dim cnt As Integer = 0
+
+        Do While cnt < bdays
+            testDate = DateAdd(DateInterval.Day, -1, testDate)
+            wday = Weekday(testDate)
+            If wday >= 2 And wday <= 6 Then
+                ' weekdays from Monday to Friday
+                Select Case getHoliday(cur, testDate)
+                    Case 1
+                        ' This is a holiday continue to other date
+                    Case 0
+                        ' Not a holiday
+                        cnt += 1
+                    Case -1
+                        ' No holiday calendar for the currency
+                        testDate = Nothing
+                        Exit Do
+                End Select
+
+            End If
+        Loop
+
+        Return testDate.ToString("yyyyMMdd")
+    End Function
+
+    Protected Function getHoliday(ByVal currency As String, ByVal checkDate As Date) As Integer
+        ' This function checks MoxyHolyday table if the argument checkDate is a Holiday for the specified
+        ' currency, returns true if it's a holiday
+
+        Dim holydayFlag As Integer
+
+        Try
+            Dim conn As New SqlConnection(moxyCon)
+            Dim cmd As SqlCommand = New SqlCommand("usp_GetHolyday", conn)
+            cmd.CommandType = CommandType.StoredProcedure
+            Dim RetValue As SqlParameter = cmd.Parameters.Add("RetValue", SqlDbType.Int)
+            RetValue.Direction = ParameterDirection.ReturnValue
+            Dim curr As SqlParameter = cmd.Parameters.Add("@currency", SqlDbType.VarChar)
+            curr.Direction = ParameterDirection.Input
+            curr.Value = currency
+            Dim theDate As SqlParameter = cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
+            theDate.Direction = ParameterDirection.Input
+            theDate.Value = Convert.ToDateTime(checkDate)
+            Dim Rtn As SqlParameter = cmd.Parameters.Add("@rtn", SqlDbType.Int)
+            Rtn.Direction = ParameterDirection.Output
+
+            conn.Open()
+            cmd.ExecuteNonQuery()
+
+            holydayFlag = cmd.Parameters("@rtn").Value
+            If holydayFlag = -1 Then
+                ' calendar for specified currency & year does not exist
+                Throw New Exception(vbCrLf + "Function getHoliday: No records in MoxyHoliday for " + currency + " " + Year(checkDate).ToString + vbCrLf)
+            End If
+            conn.Close()
+        Catch ex As Exception
+            Throw New Exception(vbCrLf + "Function getHoliday: Failed to retrieve conversion instruction from Moxy table." + vbCrLf + ex.Message)
+
+        End Try
+
+        Return holydayFlag
+
+    End Function
+
+
+    ''' <summary>
+    ''' checks if the currency is exluded from GTSS files
+    ''' </summary>
+    ''' <param name="cur">currency to check</param>
+    ''' <returns></returns>
+    Private Function isExcludedCurrency(cur As String) As Boolean
+        Try
+            Dim excludedCurrencies As String = FXConManager.ReadConfigSetting("ExcludedCurrency")
+            If excludedCurrencies.IndexOf(cur) <> -1 Then
+                Return True
+            Else
+                Return False
+            End If
+
+        Catch ex As Exception
+            Throw New Exception("Function isExcludedCurrency: " + ex.Message)
+        End Try
+    End Function
+
+
+    Private Function getSwiftBrokerCode(ByVal adventBroker As String) As String
+        'This function translates advent broker code to swift broker code
+        Dim swiftBroker As String = String.Empty
+        Dim Conn As New SqlConnection(moxyCon)
+        Dim Cmd As SqlCommand = New SqlCommand("usp_GetSwiftBrokerCode", Conn)
+        Dim DR As SqlDataReader
+
+        Dim DSet As New DataSet
+
+        Try
+
+            Conn.Open()
+            Cmd.CommandType = CommandType.StoredProcedure
+            Dim RetValue As SqlParameter = Cmd.Parameters.Add("RetValue", SqlDbType.Int)
+            RetValue.Direction = ParameterDirection.ReturnValue
+            Dim ParmBrokerCode As SqlParameter = Cmd.Parameters.Add("@adventbroker", SqlDbType.VarChar)
+            ParmBrokerCode.Direction = ParameterDirection.Input
+            ParmBrokerCode.Value = adventBroker
+
+            DR = Cmd.ExecuteReader()
+
+            While DR.Read()
+                If DR.GetString(0) = Nothing Then
+                    Throw New Exception("GTSSObj.getSwiftBrokerCode: No swift broker code found for " + adventBroker)
+
+                End If
+
+                swiftBroker = DR.GetString(0)
+            End While
+
+            DR.Close()
+
+        Catch ex As Exception
+            Throw New Exception(vbCrLf + "GTSSObj.getSwiftBrokerCode: Failed to retrieve swift broker code from Moxy tb_brokercodes table for boker " + adventBroker + vbCrLf)
+
+        Finally
+            If Not DR Is Nothing Then
+                DR.Close()
+
+            End If
+            Conn.Close()
+
+        End Try
+
+        Return swiftBroker
+    End Function
+
+    Private Function getAgent(brokerCode As String, cur As String) As String
+        'This function gets swift code and account name for the broker and
+        'generates DeliveryAgent field in BuyMT300 file
+        Dim agent As String = String.Empty
+
+        Dim broker As String = String.Empty
+        Dim Conn As New SqlConnection(moxyCon)
+        Dim Cmd As SqlCommand = New SqlCommand("usp_GetSwiftCode", Conn)
+        Dim DR As SqlDataReader
+        Dim DSet As New DataSet
+        Dim bankName As String = String.Empty
+
+        Try
+
+            broker = getSwiftBrokerCode(brokerCode)
+
+            Conn.Open()
+            Cmd.CommandType = CommandType.StoredProcedure
+            Dim RetValue As SqlParameter = Cmd.Parameters.Add("RetValue", SqlDbType.Int)
+            RetValue.Direction = ParameterDirection.ReturnValue
+            Dim ParmBrokerCode As SqlParameter = Cmd.Parameters.Add("@brokercode", SqlDbType.VarChar)
+            ParmBrokerCode.Direction = ParameterDirection.Input
+            ParmBrokerCode.Value = broker
+            Dim ParmCurrency As SqlParameter = Cmd.Parameters.Add("@currency", SqlDbType.Char, 3)
+            ParmCurrency.Direction = ParameterDirection.Input
+            ParmCurrency.Value = cur
+
+            DR = Cmd.ExecuteReader()
+
+            While DR.Read()
+                If DR.GetString(0) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No swift code found for " + brokerCode + Space(1) + cur)
+                End If
+
+                If DR.GetString(1) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No bank name found for " + brokerCode + Space(1) + cur)
+                End If
+                bankName = DR.GetString(1)
+
+                If DR.GetString(2) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No account info found for " + brokerCode + Space(1) + cur)
+
+                End If
+
+                agent = "/ABIC/" + DR.GetString(0) + "|/NAME/" + DR.GetString(1) + "|/ACCT/" + DR.GetString(2)
+            End While
+
+            DR.Close()
+
+        Catch ex As Exception
+            Throw New Exception(vbCrLf + "GTSSObj.getAgent: Failed to retrieve swift instruction from Moxy table for boker " + brokerCode + Space(1) + cur + " Stored Proc: " + Cmd.CommandText + vbCrLf)
+
+        Finally
+
+            Conn.Close()
+        End Try
+
+        If agent Is Nothing Then
+            Throw New Exception(vbCrLf + "Failed to retrieve swift instruction from Moxy table for boker " + brokerCode + Space(1) + cur + " Stored Proc: " + Cmd.CommandText + vbCrLf)
+
+        End If
+
+        Return agent
+    End Function
+
+    ''' <summary>
+    ''' returns broker's BIC code
+    ''' </summary>
+    ''' <returns></returns>
+    Private Function getBICCode(brokeCode As String) As String
+        ' this function returns FX connect BIC code for a broker
+        Dim bicCode As String = 0
+
+        Dim Conn As New SqlConnection(moxyCon)
+        Dim Cmd As SqlCommand = New SqlCommand("usp_GetBrokerSwiftCode", Conn)
+        Dim DA As SqlDataAdapter = New SqlDataAdapter
+        Dim DSet As New DataSet
+
+        Cmd.CommandType = CommandType.StoredProcedure
+        Dim RetValue As SqlParameter = Cmd.Parameters.Add("RetValue", SqlDbType.Int)
+        RetValue.Direction = ParameterDirection.ReturnValue
+        Dim broker As SqlParameter = Cmd.Parameters.Add("@brokercode", SqlDbType.VarChar)
+        broker.Direction = ParameterDirection.Input
+        broker.Value = brokerCode
+        DA.SelectCommand = Cmd
+        Try
+            Conn.Open()
+            DA.Fill(DSet, "swiftcodes")
+            Dim DTable As DataTable = DSet.Tables("swiftcodes")
+            If DTable.Rows.Count = 0 Then
+                ' no portfolio found
+                Throw New Exception(vbCrLf + "GTSSObj.FUNCTION getBICCode: usp_GetBrokerSwiftCode: No broker swift code found for  " + brokerCode)
+            ElseIf DTable.Rows.Count > 1 Then
+                Throw New Exception(vbCrLf + "GTSSObj.FUNCTION getBICCode:usp_GetBrokerSwiftCode: Too many broker swift codes found for  " + brokerCode)
+            Else
+                Dim drow As DataRow
+                Dim drows() As DataRow = DTable.Select
+                For Each drow In drows
+                    bicCode = drow(0).ToString
+                Next
+
+            End If
+
+        Catch ex As Exception
+            Throw New Exception(vbCrLf + "GTSSObj.FUNCTION getBICCode: getBICCode: Failed to retrieve swift code from Moxy table for " + brokerCode + vbCrLf)
+
+        Finally
+            Conn.Close()
+        End Try
+
+
+        Return bicCode
+    End Function
+
+End Class

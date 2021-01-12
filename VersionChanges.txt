@@ -1,0 +1,5 @@
+Application version changes
+
+This app is created to work with Moxy 18.
+
+1. Reconnected to Moxy 18.

@@ -1,0 +1,187 @@
+    Public Function getFundTradingRecap(ByVal asOfDate As DateTime) As Integer
+
+        Dim rtn As Integer = 0
+        Dim objOpt As Object = System.Reflection.Missing.Value
+        Dim rowNum As Integer
+
+        Try
+            If File.Exists(fName) Then
+                File.Delete(fName)
+            End If
+
+            Dim Conn As New SqlConnection(moxyCon)
+            Dim Cmd As New SqlCommand("usp_FundTradesRecap", Conn)
+            Cmd.CommandType = CommandType.StoredProcedure
+            Dim Portfolio As New SqlParameter
+            Portfolio = Cmd.Parameters.Add("@portfolio", SqlDbType.VarChar, 10)
+            Portfolio.Direction = ParameterDirection.Input
+            Portfolio.Value = "55090"  ' Tweedy, Browne Global Value portfolio
+            Dim PortDate As New SqlParameter
+            PortDate = Cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
+            PortDate.Direction = ParameterDirection.Input
+            PortDate.Value = asOfDate
+
+            Conn.Open()
+            Dim myReader As SqlDataReader = Cmd.ExecuteReader()
+
+            ' create a new excel file
+            Dim oXL As New Excel.Application
+            Dim theWorkbook As Excel.Workbook
+            Dim worksheet As Excel.Worksheet
+
+            theWorkbook = oXL.Workbooks.Add(objOpt)
+            worksheet = theWorkbook.ActiveSheet
+
+            ' create header
+            worksheet.Cells(1, 1) = "Trade Date"
+            worksheet.Cells(1, 2) = asOfDate.ToString("MM/dd/yyyy") + Space(5)
+
+            worksheet.Cells(2, 1) = "Authorized by"
+            worksheet.Cells(2, 2) = "AM"
+            worksheet.Cells(5, 1) = "Recap for TBGVX"
+            worksheet.Cells(6, 1) = "Buy/Sell"
+            worksheet.Cells(6, 2) = "SHS"
+            worksheet.Cells(6, 3) = "Description"
+            worksheet.Cells(6, 4) = "Price"
+            worksheet.Cells(6, 5) = "Net Amount"
+            worksheet.Cells(6, 6) = "Broker"
+            'worksheet.Cells(5, 7) = "Posted T/D"
+            worksheet.Cells(6, 7) = "Posted T+1"
+            worksheet.Cells(6, 8) = "BNY Initial"
+
+            rowNum = 7
+            ' Column order in DataReader:
+            '   0 - orderid, 1 - shortname (security), 2 - ISIN,
+            '   3 - trancode, 4 - tradedate, 5 - allocqty,
+            '   6 - allocprice, 7 - principal, 8 - commission,
+            '   9 - secfee, 10 - otherfee, 11 - totalamount,
+            '  12 - brokerid, 13 - tktchrg, 14 - fxrate
+
+            While myReader.Read()
+                worksheet.Cells(rowNum, 1) = myReader.GetValue(3).ToString ' trancode
+                worksheet.Cells(rowNum, 2) = Format(myReader.GetValue(5), "##,##0.00")    ' allocqty
+                worksheet.Cells(rowNum, 3) = myReader.GetValue(1).ToString   ' security
+                worksheet.Cells(rowNum, 4) = Format(myReader.GetValue(6), "##,##0.0000")        ' allocprice
+                worksheet.Cells(rowNum, 5) = Format(myReader.GetValue(11), "##,##0.00")      ' total (net) amount
+                worksheet.Cells(rowNum, 6) = myReader.GetValue(12).ToString         ' broker
+
+                rowNum += 1
+
+            End While
+            myReader.Close()
+            rowNum += 1
+
+            ' create header 
+            'worksheet.Cells(rowNum, 1) = "Recap for TWEBX"
+            'rowNum += 1
+            'worksheet.Cells(rowNum, 1) = "Buy/Sell"
+            'worksheet.Cells(rowNum, 2) = "SHS"
+            'worksheet.Cells(rowNum, 3) = "Description"
+            'worksheet.Cells(rowNum, 4) = "Price"
+            'worksheet.Cells(rowNum, 5) = "Net Amount"
+            'worksheet.Cells(rowNum, 6) = "Broker"
+            ''worksheet.Cells(rowNum, 7) = "Posted T/D"
+            'worksheet.Cells(rowNum, 7) = "Posted T+1"
+            'worksheet.Cells(rowNum, 8) = "BNY Initial"
+
+            Portfolio.Value = "55093" ' Tweedy's American Value Fund
+            rowNum += 1
+
+            Dim myReader02 As SqlDataReader = Cmd.ExecuteReader
+            While myReader02.Read()
+                worksheet.Cells(rowNum, 1) = myReader02.GetValue(3).ToString                            ' trancode
+                worksheet.Cells(rowNum, 2) = Format(myReader02.GetValue(5), "##,##0.00")       ' allocqty
+                worksheet.Cells(rowNum, 3) = myReader02.GetValue(1).ToString                             ' security
+                worksheet.Cells(rowNum, 4) = Format(myReader02.GetValue(6), "##,##0.0000")        ' allocprice
+                worksheet.Cells(rowNum, 5) = Format(myReader02.GetValue(11), "##,##0.00")      ' total (net) amount
+                worksheet.Cells(rowNum, 6) = myReader02.GetValue(12).ToString                            ' broker
+
+                rowNum += 1
+
+            End While
+
+            myReader02.Close()
+            rowNum += 1
+
+            ' create header 
+            'worksheet.Cells(rowNum, 1) = "Recap for TBHDX"
+            rowNum += 1
+            'worksheet.Cells(rowNum, 1) = "Buy/Sell"
+            'worksheet.Cells(rowNum, 2) = "SHS"
+            'worksheet.Cells(rowNum, 3) = "Description"
+            'worksheet.Cells(rowNum, 4) = "Price"
+            'worksheet.Cells(rowNum, 5) = "Net Amount"
+            'worksheet.Cells(rowNum, 6) = "Broker"
+            ''worksheet.Cells(rowNum, 7) = "Posted T/D"
+            'worksheet.Cells(rowNum, 7) = "Posted T+1"
+            'worksheet.Cells(rowNum, 8) = "BNY Initial"
+
+            Portfolio.Value = "55095" ' Tweedy's High Div Fund
+            rowNum += 1
+
+            Dim myReader03 As SqlDataReader = Cmd.ExecuteReader
+            While myReader03.Read()
+                worksheet.Cells(rowNum, 1) = myReader03.GetValue(3).ToString                            ' trancode
+                worksheet.Cells(rowNum, 2) = Format(myReader03.GetValue(5), "##,##0.00")       ' allocqty
+                worksheet.Cells(rowNum, 3) = myReader03.GetValue(1).ToString                             ' security
+                worksheet.Cells(rowNum, 4) = Format(myReader03.GetValue(6), "##,##0.0000")        ' allocprice
+                worksheet.Cells(rowNum, 5) = Format(myReader03.GetValue(11), "##,##0.00")      ' total (net) amount
+                worksheet.Cells(rowNum, 6) = myReader03.GetValue(12).ToString                            ' broker
+
+                rowNum += 1
+
+            End While
+
+            myReader03.Close()
+            rowNum += 1
+
+            ' create header 
+            'worksheet.Cells(rowNum, 1) = "Recap for TBCUX"
+            rowNum += 1
+            'worksheet.Cells(rowNum, 1) = "Buy/Sell"
+            'worksheet.Cells(rowNum, 2) = "SHS"
+            'worksheet.Cells(rowNum, 3) = "Description"
+            'worksheet.Cells(rowNum, 4) = "Price"
+            'worksheet.Cells(rowNum, 5) = "Net Amount"
+            'worksheet.Cells(rowNum, 6) = "Broker"
+            ''worksheet.Cells(rowNum, 7) = "Posted T/D"
+            'worksheet.Cells(rowNum, 7) = "Posted T+1"
+            'worksheet.Cells(rowNum, 8) = "BNY Initial"
+
+            Portfolio.Value = "55096" ' Tweedy's High Div Fund
+            rowNum += 1
+
+            Dim myReader04 As SqlDataReader = Cmd.ExecuteReader
+            While myReader04.Read()
+                worksheet.Cells(rowNum, 1) = myReader04.GetValue(3).ToString                            ' trancode
+                worksheet.Cells(rowNum, 2) = Format(myReader04.GetValue(5), "##,##0.00")       ' allocqty
+                worksheet.Cells(rowNum, 3) = myReader04.GetValue(1).ToString                             ' security
+                worksheet.Cells(rowNum, 4) = Format(myReader04.GetValue(6), "##,##0.0000")        ' allocprice
+                worksheet.Cells(rowNum, 5) = Format(myReader04.GetValue(11), "##,##0.00")      ' total (net) amount
+                worksheet.Cells(rowNum, 6) = myReader04.GetValue(12).ToString                            ' broker
+
+                rowNum += 1
+
+            End While
+
+            myReader04.Close()
+
+
+            ' save generated Excel file
+            worksheet.Columns.AutoFit()
+            theWorkbook.SaveAs(fName, objOpt, objOpt, objOpt, objOpt, objOpt, Excel.XlSaveAsAccessMode.xlShared, objOpt, objOpt, objOpt, objOpt, objOpt)
+            theWorkbook.Close(False, objOpt, objOpt)
+
+            oXL.Quit()
+
+            myReader02.Close()
+            Conn.Close()
+
+            Return 1
+        Catch ex As Exception
+            screen.Text += vbCrLf + ex.Message
+            Return -1
+        End Try
+
+
+    End Function ' End of getFundTradingRecap

@@ -1,0 +1,64 @@
+ Private Function getAgent(brokerCode As String, cur As String) As String
+        'This function gets swift code and account name for the broker and
+        'generates DeliveryAgent field in BuyMT300 file
+        Dim agent As String = String.Empty
+
+        Dim broker As String = String.Empty
+        Dim Conn As New SqlConnection(moxyCon)
+        Dim Cmd As SqlCommand = New SqlCommand("usp_GetSwiftCode", Conn)
+        Dim DR As SqlDataReader
+        Dim DSet As New DataSet
+        Dim bankName As String = String.Empty
+
+        Try
+
+            broker = getSwiftBrokerCode(brokerCode)
+
+            Conn.Open()
+            Cmd.CommandType = CommandType.StoredProcedure
+            Dim RetValue As SqlParameter = Cmd.Parameters.Add("RetValue", SqlDbType.Int)
+            RetValue.Direction = ParameterDirection.ReturnValue
+            Dim ParmBrokerCode As SqlParameter = Cmd.Parameters.Add("@brokercode", SqlDbType.VarChar)
+            ParmBrokerCode.Direction = ParameterDirection.Input
+            ParmBrokerCode.Value = broker
+            Dim ParmCurrency As SqlParameter = Cmd.Parameters.Add("@currency", SqlDbType.Char, 3)
+            ParmCurrency.Direction = ParameterDirection.Input
+            ParmCurrency.Value = cur
+
+            DR = Cmd.ExecuteReader()
+
+            While DR.Read()
+                If DR.GetString(0) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No swift code found for " + brokerCode + Space(1) + cur)
+                End If
+
+                If DR.GetString(1) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No bank name found for " + brokerCode + Space(1) + cur)
+                End If
+                bankName = DR.GetString(1)
+
+                If DR.GetString(2) = Nothing Then
+                    Throw New Exception(vbCrLf + "GTSSObj.getAgent: No account info found for " + brokerCode + Space(1) + cur)
+
+                End If
+
+                agent = "/ABIC/" + DR.GetString(0) + "|/NAME/" + DR.GetString(1) + "|/ACCT/" + DR.GetString(2)
+            End While
+
+            DR.Close()
+
+        Catch ex As Exception
+            Throw New Exception(vbCrLf + "GTSSObj.getAgent: Failed to retrieve swift instruction from Moxy table for boker " + brokerCode + Space(1) + cur + " Stored Proc: " + Cmd.CommandText + vbCrLf)
+
+        Finally
+
+            Conn.Close()
+        End Try
+
+        If agent Is Nothing Then
+            Throw New Exception(vbCrLf + "Failed to retrieve swift instruction from Moxy table for boker " + brokerCode + Space(1) + cur + " Stored Proc: " + Cmd.CommandText + vbCrLf)
+
+        End If
+
+        Return agent
+    End Function

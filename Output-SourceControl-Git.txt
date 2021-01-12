@@ -1,0 +1,10 @@
+﻿An existing Git repository was found in P:\VBApps\FXConMoxy18-2020-01.
+Opening repositories:
+P:\VBApps\FXConMoxy18-2020-01
+Pushing master
+Error encountered while pushing branch to the remote repository: Branch master does not exist. Commit changes locally and then push.
+Fetching from origin
+Pushing master
+Error encountered while pushing branch to the remote repository: Branch master does not exist. Commit changes locally and then push.
+Pushing master
+Error encountered while pushing branch to the remote repository: Branch master does not exist. Commit changes locally and then push.

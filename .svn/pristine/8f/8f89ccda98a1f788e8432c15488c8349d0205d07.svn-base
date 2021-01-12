@@ -1,0 +1,36 @@
+﻿Public Class GTSSObj
+
+    Dim portCode As String
+    Dim tranCode As String
+    Dim secType As String
+    Dim curr As String
+    Dim tradeDate As String
+    Dim settleDate As String
+    Dim settleDate2 As String
+    Dim srcDestType As String
+    Dim localAmount As String
+    Dim usdAmount As String
+    Dim fxRate As String
+    Dim curr2 As String
+    Dim bicCode As String
+    Dim brokerCode As String
+    Dim deliveryAgent As String
+    Dim receivingAgent As String
+    Dim receivingAgent2 As String
+    Dim fixingDate As String
+
+    Public Sub New(ByVal portCode As String, tranCode As String, secType As String,
+                                        tradeDate As String, settleDate As String, srcDestType As String,
+                                        localAmount As String, usdAmount As String, brokerCode As String)
+        ' Initialize with a specific parms
+        Me.portCode = portCode
+        Me.tranCode = tranCode
+        Me.secType = secType
+        Me.tradeDate = tradeDate
+        Me.settleDate = settleDate
+        Me.srcDestType = srcDestType
+        Me.localAmount = localAmount
+        Me.brokerCode = brokerCode
+        Me.usdAmount = usdAmount
+    End Sub
+End Class
