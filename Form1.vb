@@ -11,11 +11,14 @@ Imports System.Collections.Generic
 ' Last Update: 07/17/2012
 ' Application is integrated with .Net 4, Excel 2007
 ' Last Update: 12/14/2020
-' Application is connected to Moxy 18
+'                       7/23/2025
+' Application is connected to Moxy 24
 
 Public Class Form1
     Inherits System.Windows.Forms.Form
-    Dim connStr As String = "Data Source=MOXY;Initial Catalog=moxy;Integrated Security=SSPI"
+    Dim connStr As String = ReadConfigSetting("MoxyConnection")
+    Dim portiaConStr As String = ReadConfigSetting("PortiaConnection")
+
 
 #Region " Windows Form Designer generated code "
 
@@ -26,6 +29,8 @@ Public Class Form1
         InitializeComponent()
 
         'Add any initialization after the InitializeComponent() call
+        Me.Text = "FX Connect - Moxy 24"
+
 
     End Sub
 
@@ -58,6 +63,7 @@ Public Class Form1
     Friend WithEvents ButtonMoxyExport As System.Windows.Forms.Button
     Friend WithEvents Button3 As System.Windows.Forms.Button
     Friend WithEvents btnCreateGTSSFile As Button
+    Friend WithEvents Button4 As Button
     Friend WithEvents DataView1 As System.Data.DataView
     <System.Diagnostics.DebuggerStepThrough()> Private Sub InitializeComponent()
         Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(Form1))
@@ -75,6 +81,7 @@ Public Class Form1
         Me.ButtonMoxyExport = New System.Windows.Forms.Button()
         Me.Button3 = New System.Windows.Forms.Button()
         Me.btnCreateGTSSFile = New System.Windows.Forms.Button()
+        Me.Button4 = New System.Windows.Forms.Button()
         CType(Me.DataGrid1, System.ComponentModel.ISupportInitialize).BeginInit()
         CType(Me.DataView1, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.SuspendLayout()
@@ -151,9 +158,16 @@ Public Class Form1
         Me.btnCreateGTSSFile.Name = "btnCreateGTSSFile"
         Me.btnCreateGTSSFile.UseVisualStyleBackColor = True
         '
+        'Button4
+        '
+        resources.ApplyResources(Me.Button4, "Button4")
+        Me.Button4.Name = "Button4"
+        Me.Button4.UseVisualStyleBackColor = True
+        '
         'Form1
         '
         resources.ApplyResources(Me, "$this")
+        Me.Controls.Add(Me.Button4)
         Me.Controls.Add(Me.btnCreateGTSSFile)
         Me.Controls.Add(Me.Button3)
         Me.Controls.Add(Me.ButtonMoxyExport)
@@ -180,7 +194,7 @@ Public Class Form1
     Private Sub Button_FXConPreAlloc_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button_FXConPreAlloc.Click
         TextBox1.Text = "" ' clear previous contents
 
-        Dim Conn As New SqlConnection("Data Source=MOXY7;Initial Catalog=moxy86;Integrated Security=SSPI")
+        Dim Conn As New SqlConnection("Data Source=MOXY1;Initial Catalog=moxy;Integrated Security=SSPI")
         'Dim rsData As ADODB.Recordset
         Dim Cmd As SqlCommand = New SqlCommand("usp_GetFXConTradesByDate", Conn)
         Dim DA As SqlDataAdapter = New SqlDataAdapter
@@ -280,8 +294,11 @@ Public Class Form1
         'Dim sHeaders As String
         Dim allocDate As Object
 
+
+        Dim outFolder As String = ReadConfigSetting("TradesAllocationFolder")
+
         'file save name
-        fName = "H:\FXCON\Moxy18\BuyMT300a.txt"
+        fName = outFolder + "\BuyMT300a.txt"
 
         ' Ask user to enter the trade date
         allocDate = InputBox("Please enter the allocation date", "Request", Today())
@@ -799,7 +816,6 @@ Public Class Form1
     End Sub
 
 
-
     Private Sub btnFundTrades_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles btnFundTrades.Click
         Dim fName As String
         Dim allocDate As DateTime
@@ -817,7 +833,10 @@ Public Class Form1
             Return
         End If
 
-        fName = "J:\PFPC\Recaps\Moxy18\FT" + allocDate.ToString("MMddyy") + ".xlsx"
+
+        Dim outFolder As String = ReadConfigSetting("FundTradingRecapFolder")
+
+        fName = outFolder + "\FT" + allocDate.ToString("MMddyy") + ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
         'rtn = fm.getFundTradingRecap(allocDate)
         rtn = fm.getFundTradingRecapAllFunds(allocDate)
@@ -838,7 +857,9 @@ Public Class Form1
     End Sub
 
 
-
+    ' 
+    ' Trading RECAPS
+    '
     Private Sub Button1_Click_1(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button1.Click
         Dim fName As String
         Dim allocDate As DateTime
@@ -863,7 +884,7 @@ Public Class Form1
         Dim recapFolder As String = ReadConfigSetting("RecapFolder")
 
         ' Trading Recap Domestic
-        fName = recapFolder + "TradingRecap_" + allocDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder + "\TradingRecap_" + allocDate.ToString("MMddyy") + ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
         rtn = fm.getPortfolioRecap(allocDate)
         If rtn <> -1 Then
@@ -873,7 +894,7 @@ Public Class Form1
         End If
         Application.DoEvents()
         'Trading Recap International
-        fName = recapFolder + "TradingRecapInternational_" + allocDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder + "\TradingRecapInternational_" + allocDate.ToString("MMddyy") + ".xlsx"
         Dim fm1 As New FXConManager(fName, TextBox1, connStr, "")
         rtn = fm1.getPortfolioRecapInternational(allocDate)
         If rtn <> -1 Then
@@ -1071,4 +1092,43 @@ Public Class Form1
         End Try
         Return (result)
     End Function
+
+
+    Private Sub Button4_Click(sender As Object, e As EventArgs) Handles Button4.Click
+        ' offshore funds recap
+        Dim frmDialog As New FormDateRange()
+        Dim startDate As String
+        Dim endDate As String
+
+
+        ' Show testDialog as a modal dialog and determine if DialogResult = OK.
+        If frmDialog.ShowDialog(Me) = System.Windows.Forms.DialogResult.OK Then
+            ' Read the contents of testDialog's TextBox.
+            'txtResult.Text = testDialog.TextBox1.Text
+            startDate = frmDialog.DateTimePickerStartDate.Value.ToShortDateString
+            endDate = frmDialog.DateTimePickerEndDate.Value.ToShortDateString
+
+            If frmDialog.DateTimePickerStartDate.Value < frmDialog.DateTimePickerEndDate.Value Then
+                'MessageBox.Show(startDate + " " + endDate)
+                TextBox1.Text = "Selected dates: " + startDate + " " + endDate + vbCrLf
+                Dim recapFolder As String = ReadConfigSetting("OffshoreRecapFolder")
+
+                Dim fName As String = recapFolder + "OffshoreRecap_" + startDate.Replace("/", "-") + "_" + endDate.Replace("/", "-") + ".xlsx"
+                Dim fm As New FXConManager(fName, TextBox1, connStr, "")
+                Dim rtn As Int16 = fm.GetOffshoreFundsRecapsFromPortiaRef(startDate, endDate, portiaConStr, fName) ' Data source has been changed from Moxy to Portia
+                If rtn <> -1 Then
+                    TextBox1.Text = "Created file " + fName + vbCrLf
+                Else
+                    TextBox1.Text += vbCrLf + "Failed to create file " + fName + vbCrLf
+                End If
+
+            End If
+
+
+        Else
+            TextBox1.Text = "Cancelled"
+        End If
+        frmDialog.Dispose()
+
+    End Sub
 End Class

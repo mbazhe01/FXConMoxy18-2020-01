@@ -82,12 +82,19 @@ Public Class GTSSObj
                 End If
 
                 bicCode = getBICCode(brokerCode)
+                'bicCode = ""
 
-                'get delivery agen
+
+                'get delivery agent
                 deliveryAgent = getAgent(brokerCode, curr)
+                ' as requested by FX Connect
+                deliveryAgent = "/NETS/"
+
 
                 ' get receiving agent
-                receivingAgent2 = getAgent(brokerCode, curr2)
+                'receivingAgent2 = getAgent(brokerCode, curr2)
+                receivingAgent2 = "/NETS/"
+
 
                 ' get fixing date 
                 If FXConManager.ReadConfigSetting("FixingDateCurrencies").IndexOf(curr) <> -1 Then

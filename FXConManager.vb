@@ -5,18 +5,23 @@ Imports System.Text
 Imports System.Data
 Imports System.Collections.Generic
 Imports System.Configuration
+Imports System.Windows.Forms
+Imports System.Windows.Forms.TextBox
+Imports Microsoft.Office.Interop.Excel
+Imports System.Runtime.InteropServices
+
 
 Public Class FXConManager
     Protected fName As String
 
-    Protected screen As TextBox
+    Protected screen As System.Windows.Forms.TextBox
     Protected moxyCon As String
     Protected axysCurrency As String
-    Protected hdgDT As DataTable ' hedge exposure dt
+    Protected hdgDT As System.Data.DataTable ' hedge exposure dt
     Protected repInfo As ReportInfo
     Protected mo As MessageObj
 
-    Sub New(ByVal aFileName As String, ByRef txtBox As TextBox, ByVal connStr As String, ByVal axysCurr As String)
+    Sub New(ByVal aFileName As String, ByRef txtBox As System.Windows.Forms.TextBox, ByVal connStr As String, ByVal axysCurr As String)
 
         fName = aFileName
         screen = txtBox
@@ -36,7 +41,7 @@ Public Class FXConManager
         file.Close()
     End Function
 
-    Public Function addFXConTrades(ByVal DT As DataTable) As Integer
+    Public Function addFXConTrades(ByVal DT As Data.DataTable) As Integer
         Dim rtn As Integer = 0
         ' chr(9) returns TAB
         Dim fw As StreamWriter
@@ -63,6 +68,11 @@ Public Class FXConManager
         Dim fxRate As String
         Dim crossRate As String
         Dim custID As String
+
+        Dim firstAmt As String
+        Dim secondAmt As String
+        Dim firstCur As String
+        Dim secondCur As String
         Dim portfolio As String
 
         Try
@@ -74,6 +84,10 @@ Public Class FXConManager
             fw.WriteLine(sHeader)
             For Each drow In drows
 
+                If drow(2).ToString = "24132" Then
+                    portfolio = drow(2).ToString
+                End If
+
                 rowNum = rowNum + 1
                 newSeed = getTranIDSeed(moxyCon)
 
@@ -82,18 +96,12 @@ Public Class FXConManager
                     Return -1
                 End If
 
-                If drow("portfolio").ToString().Equals("24132") Then
-                    portfolio = drow("portfolio")
-                End If
-
                 bicCode = drow("BicCode").ToString
                 If Not bicCode.Length > 0 Then
                     screen.Text += vbCrLf + "No BIC Code found for " + drow("orderbrokerid")
-
                 End If
 
-                Dim test As Double
-                test = drow("amount")
+                firstAmt = drow("amount")
 
                 'If getDisplayDirect(drow("sectype").ToString) = "y" Then
                 If Len(drow("crossrate")) > 0 Then
@@ -103,13 +111,18 @@ Public Class FXConManager
                 End If
 
                 'Else
-                '   amountSold = drow("amount") / drow("tradefxrate")
+                'amountSold = drow("amount") / drow("tradefxrate")
                 'End If
                 ' when tran code is ss (Short Sell) swap localAmount and usdAmount
 
                 localAmount = Math.Round(drow("amount"), 2).ToString()
+
+                ' MB 3/4/2021
                 usdAmount = Math.Round(amountSold, 2).ToString
-                Dim tmp1 As String = drow("tradecurrency").ToString 'DELETE!!!
+
+                Dim secType As String = drow("sectype")
+
+                secType = secType.Substring(2, 2)
 
                 curr = getCurrency(drow("sectype"))
                 If curr = Nothing Then
@@ -141,115 +154,128 @@ Public Class FXConManager
 
                 End If
 
-                If UCase(curr) = UCase(curr2) Then
-                    'don't put this in the file
-                    curr = curr
-                Else
-                    If drow("trancode").ToString() = "sl" Then
-
-                        tmp = localAmount
-                        localAmount = usdAmount
-                        usdAmount = tmp
-                        tmp = ""
-                        tmp = curr
-                        curr = curr2
-                        curr2 = tmp
-                        tmp = ""
-                        'End If
-
-                    End If
-
-                    orderbrokerid = drow("orderbrokerid")
-
-                    '  Get Delivery Agent
-                    If getAgent(drow("orderbrokerid"), curr, DeliveryAgent) = -1 Then
-                        Return -1
-                    Else
-                        If DeliveryAgent.Length = 0 Then
-                            screen.Text += vbCrLf + "Undefined delivery agent info found for " + drow("orderbrokerid") + Space(1) + curr
-                            Return -1
-                        End If
-                    End If
-
-                    ' Get Receiving Agent
-                    If getAgent(drow("orderbrokerid"), curr2, RecievingAgent2) = -1 Then
-                        Return -1
-                    Else
-                        If RecievingAgent2.Length = 0 Then
-                            screen.Text += vbCrLf + "Undefined recieving agent info found for " + drow("orderbrokerid") + Space(1) + curr2
-                            Return -1
-                        End If
-                    End If
-
-                    crossRate = drow("crossrate")
-
-                    If Not Len(drow("crossrate")) > 0 Then
-                        ' This could be applied only to US based accounts
-                        If getDisplayDirect(drow("sectype").ToString) = "y" Then
-                            fxRate = Math.Round(drow("tradefxrate"), 7).ToString()
-                        Else
-                            fxRate = Math.Round(1 / drow("tradefxrate"), 7).ToString()
-                        End If
-                    Else
-                        ' for non us based accounts show crossrate
-                        fxRate = drow("crossrate").ToString()
-                    End If
-
-                    ' get a custodian id 
-                    custID = Nothing
-                    ' ???
-                    If drow("portfolio").ToString <> "24770" Then
-                        custID = getCustodianID(drow("portfolio").ToString)
-                    End If
-
-                    cnt += 1
-                    sTradeLine = "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9) + "15A" + Chr(9)
-                    sTradeLine += newSeed.ToString() + Chr(9) + "" + Chr(9) + "NEWT" + Chr(9)
-                    sTradeLine += "" + Chr(9) + bicCode + Chr(9) + "" + Chr(9)
-                    sTradeLine += "" + Chr(9) + "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9)
-                    sTradeLine += "" + Chr(9) + "" + Chr(9) + "15B" + Chr(9)
-                    sTradeLine += drow("tradedate").ToString() + Chr(9) + drow("settledate").ToString() + Chr(9) + fxRate + Chr(9)
-
-                    sTradeLine += UCase(curr) + localAmount + Chr(9) + DeliveryAgent + Chr(9) + "" + Chr(9)
-                    sTradeLine += RecievingAgent + Chr(9) + UCase(curr2) + usdAmount + Chr(9) + "" + Chr(9)
-
-                    sTradeLine += "" + Chr(9) + RecievingAgent2 + Chr(9) + "/ABIC/" + bicCode + "|/NAME/UKWN" + Chr(9)
-                    sTradeLine += "15C" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    If Trim(custID) <> "RTST" Then
-                        sTradeLine += "/GLCID/" + drow("portfolio").ToString
-                    Else
-                        sTradeLine += "/GLCID/" + drow("portfolio").ToString + "/SPOT/"
-                    End If
-                    sTradeLine += Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                    sTradeLine += "-"
-
-                    fw.WriteLine(sTradeLine)
-                    sTradeLine = ""
+                If drow("trancode").ToString() = "sl" Then
+                    tmp = localAmount
+                    localAmount = usdAmount
+                    usdAmount = tmp
+                    tmp = ""
+                    tmp = curr
+                    curr = curr2
+                    curr2 = tmp
+                    tmp = ""
+                    'End If
 
                 End If
 
+                orderbrokerid = drow("orderbrokerid")
 
+                '  Get Delivery Agent
+                If getAgent(drow("orderbrokerid"), curr, DeliveryAgent) = -1 Then
+                    Return -1
+                Else
+                    If DeliveryAgent.Length = 0 Then
+                        screen.Text += vbCrLf + "Undefined delivery agent info found for " + drow("orderbrokerid") + Space(1) + curr
+                        Return -1
+                    End If
+                End If
+                'End If
+
+                ' Get Receiving Agent
+                If getAgent(drow("orderbrokerid"), curr2, RecievingAgent2) = -1 Then
+                    Return -1
+                Else
+                    If RecievingAgent2.Length = 0 Then
+                        screen.Text += vbCrLf + "Undefined receiving agent info found for " + drow("orderbrokerid") + Space(1) + curr2
+                        Return -1
+                    End If
+                End If
+                'End If
+
+                crossRate = drow("crossrate")
+
+                If Not Len(drow("crossrate")) > 0 Then
+                    ' This could be applied only to US based accounts
+                    If getDisplayDirect(drow("sectype").ToString) = "y" Then
+                        fxRate = Math.Round(drow("tradefxrate"), 7).ToString()
+                    Else
+                        fxRate = Math.Round(1 / drow("tradefxrate"), 7).ToString()
+                    End If
+                Else
+                    ' for non us based accounts show crossrate
+                    fxRate = drow("crossrate").ToString()
+                End If
+                'Else
+                ' for non us based accounts show crossrate
+                fxRate = drow("crossrate").ToString()
+                'End If
+
+                ' get a custodian id 
+                custID = Nothing
+
+                '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+                ' new calc 
+                firstCur = getCurrency(drow("sectype"))
+                secondCur = drow("tradecurrency").ToString
+                If secondCur = "" Then
+                    secondCur = "USD"
+                End If
+
+                ConversionInstruction = getConversionInstruction(firstCur, secondCur)
+                If ConversionInstruction = "m" Then
+                    secondAmt = Trim(Math.Round(firstAmt * CDbl(drow("crossrate")), 2).ToString)
+                ElseIf ConversionInstruction = "d" Then
+                    secondAmt = Trim(Math.Round(firstAmt / CDbl(drow("crossrate")), 2).ToString)
+                Else
+                    screen.Text += vbCrLf + "Undefine conversion instruction for " + firstCur + Space(1) + secondCur + Space(1) + " currencies. Row# : " + rowNum.ToString
+                    Return -1
+                End If
+                If drow("trancode").ToString() = "sl" Then
+                    tmp = firstAmt
+                    firstAmt = secondAmt
+                    secondAmt = tmp
+                End If
+
+                ''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+                cnt += 1
+                sTradeLine = "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9) + "15A" + Chr(9)
+                sTradeLine += newSeed.ToString() + Chr(9) + "" + Chr(9) + "NEWT" + Chr(9)
+                sTradeLine += "" + Chr(9) + bicCode + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9)
+                sTradeLine += "" + Chr(9) + "" + Chr(9) + "15B" + Chr(9)
+                sTradeLine += drow("tradedate").ToString() + Chr(9) + drow("settledate").ToString() + Chr(9) + fxRate + Chr(9)
+                sTradeLine += UCase(curr) + firstAmt + Chr(9) + DeliveryAgent + Chr(9) + "" + Chr(9)
+                sTradeLine += RecievingAgent + Chr(9) + UCase(curr2) + secondAmt + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + RecievingAgent2 + Chr(9) + "/ABIC/" + bicCode + "|/NAME/UKWN" + Chr(9)
+                sTradeLine += "15C" + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                If Trim(custID) <> "RTST" Then
+                    sTradeLine += "/GLCID/" + drow("portfolio").ToString
+                Else
+                    sTradeLine += "/GLCID/" + drow("portfolio").ToString + "/SPOT/"
+                End If
+                sTradeLine += Chr(9) + "" + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                sTradeLine += "-"
+                If (firstCur <> secondCur) Then
+                    fw.WriteLine(sTradeLine)
+                End If
+                sTradeLine = ""
             Next
             fw.WriteLine("<<" + cnt.ToString + ">>")
         Catch ex As Exception
             screen.Text += vbCrLf + ex.Message
-
         Finally
             'Close the file.
             fw.Close()
         End Try
         Return rtn
     End Function
-
-
     Private Function createFooterLine(ByVal numOfTrades As Integer) As String
         Return "<<" + numOfTrades.ToString + ">>"
     End Function
-
     Protected Function createHeaderLine() As String
         ' Note: chr(34) returns double quote
 
@@ -303,7 +329,8 @@ Public Class FXConManager
 
     Protected Function getCurrency(ByVal secType As String) As String
         Dim currency As String
-        Select Case Right(secType, 2)
+
+        Select Case Strings.Right(secType, 2)
             Case "ca"
                 currency = "CAD"
             Case "dk"
@@ -383,7 +410,7 @@ Public Class FXConManager
 
     Protected Function getDisplayDirect(ByVal secType As String) As String
         Dim disp As String
-        Select Case Right(secType, 2)
+        Select Case Strings.Right(secType, 2)
             Case "ca"
                 disp = "n"
             Case "dk"
@@ -539,7 +566,7 @@ Public Class FXConManager
         Return disp
     End Function
 
-    Public Shared Function validateTRNFile(ByVal fName As String, ByVal screen As TextBox) As Boolean
+    Public Shared Function validateTRNFile(ByVal fName As String, ByVal screen As System.Windows.Forms.TextBox) As Boolean
         ' validates TRN files before import
 
         Try
@@ -583,7 +610,8 @@ Public Class FXConManager
         Dim bicCode As String = ""
         Dim brokerCode As String
         Dim deliveryAgent As String
-        Dim receivingAgent As String = "/ABIC/UKWN|/NAME/UKWN"
+        Dim receivingAgent As String = "/NETS/"
+        'Dim receivingAgent As String = "/ABIC/UKWN|/NAME/UKWN"
         Dim recievingAgent2 As String
         Dim fixingDate As String
 
@@ -645,7 +673,7 @@ Public Class FXConManager
                         line = sr.ReadLine 'data line #14
                         If extractString(line, brokerCode) = -1 Then Return -1
 
-                        Application.DoEvents()
+                        System.Windows.Forms.Application.DoEvents()
                         line = sr.ReadLine
 
                         ' add a trade to FC Trades file
@@ -706,7 +734,7 @@ Public Class FXConManager
                         If Not newSeed > 0 Then Return -1
                         sTradeLine = "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9) + "15A" + Chr(9)
                         sTradeLine += newSeed.ToString() + Chr(9) + "" + Chr(9) + "NEWT" + Chr(9)
-                        sTradeLine += "" + Chr(9) + Left(bicCode, 6) + "TWEEUS" + cnt.ToString() + Chr(9) + "" + Chr(9)
+                        sTradeLine += "" + Chr(9) + Strings.Left(bicCode, 6) + "TWEEUS" + cnt.ToString() + Chr(9) + "" + Chr(9)
                         sTradeLine += "" + Chr(9) + "TWEEUSNYXXX" + Chr(9) + bicCode + Chr(9)
                         sTradeLine += "" + Chr(9) + fixingDate + Chr(9) + "15B" + Chr(9)
                         sTradeLine += tradeDate + Chr(9) + settleDate + Chr(9) + fxRate + Chr(9)
@@ -716,7 +744,7 @@ Public Class FXConManager
                         sTradeLine += "15C" + Chr(9) + "" + Chr(9) + "" + Chr(9)
                         sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
                         sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
-                        sTradeLine += "/GLCID/" + Left(portCode, 5) + Chr(9) + "" + Chr(9) + "" + Chr(9)
+                        sTradeLine += "/GLCID/" + Strings.Left(portCode, 5) + Chr(9) + "" + Chr(9) + "" + Chr(9)
                         sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
                         sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
                         sTradeLine += "-"
@@ -827,7 +855,7 @@ Endofloop:          Loop
             DA.SelectCommand = Cmd
             Conn.Open()
             DA.Fill(DSet, "iso")
-            Dim DTable As DataTable = DSet.Tables("iso")
+            Dim DTable As System.Data.DataTable = DSet.Tables("iso")
             If DTable.Rows.Count = 0 Then
                 ' no portfolio found
                 Throw New Exception(vbCrLf + "FUNCTION getISOCurrency: usp_GetISOCurrency: No ISO currency found for:  " + cur)
@@ -872,7 +900,7 @@ Endofloop:          Loop
         Try
             Conn.Open()
             DA.Fill(DSet, "swiftcodes")
-            Dim DTable As DataTable = DSet.Tables("swiftcodes")
+            Dim DTable As System.Data.DataTable = DSet.Tables("swiftcodes")
             If DTable.Rows.Count = 0 Then
                 ' no portfolio found
                 screen.Text += vbCrLf + "FUNCTION getBICCode: usp_GetBrokerSwiftCode: No broker swift code found for  " + brokerCode
@@ -921,7 +949,7 @@ Endofloop:          Loop
         Try
             Conn.Open()
             DA.Fill(DSet, "custodian")
-            Dim DTable As DataTable = DSet.Tables("custodian")
+            Dim DTable As System.Data.DataTable = DSet.Tables("custodian")
             If DTable.Rows.Count = 0 Then
                 ' no portfolio found
                 screen.Text += "usp_GetCustodianID: No custodian ID for " + portfolio
@@ -971,7 +999,7 @@ Endofloop:          Loop
         Try
             Conn.Open()
             DA.Fill(DSet, "instruction")
-            Dim DTable As DataTable = DSet.Tables("instruction")
+            Dim DTable As System.Data.DataTable = DSet.Tables("instruction")
             If DTable.Rows.Count = 0 Then
                 ' no trades for the date
                 screen.Text += "getConversionInstruction: No conversion instruction from " + cur1 + " to " + cur2
@@ -1205,10 +1233,14 @@ Endofloop:          Loop
             Dim Cmd As New SqlCommand("usp_FundTradesRecapAllFunds", Conn)
             Cmd.CommandType = CommandType.StoredProcedure
             Dim Portfolio As New SqlParameter
-            Dim PortDate As New SqlParameter
-            PortDate = Cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
-            PortDate.Direction = ParameterDirection.Input
-            PortDate.Value = asOfDate
+            'Dim PortDate As New SqlParameter
+            'PortDate = Cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
+            'PortDate.Direction = ParameterDirection.Input
+            'PortDate.Value = asOfDate
+            Dim param As New SqlParameter("@rundate", SqlDbType.DateTime)
+            param.Direction = ParameterDirection.Input
+            param.Value = asOfDate
+            Cmd.Parameters.Add(param)
 
             Conn.Open()
             Dim myReader As SqlDataReader = Cmd.ExecuteReader()
@@ -1244,6 +1276,11 @@ Endofloop:          Loop
             worksheet.Cells(5, co.getNext()) = "Settle Date"
             worksheet.Cells(5, co.getNext()) = "Net Fees"
             worksheet.Cells(5, co.getNext()) = "Broker Name"
+            worksheet.Cells(5, co.getNext()) = "Cusip"
+            worksheet.Cells(5, co.getNext()) = "Commission"
+            worksheet.Cells(5, co.getNext()) = "Other Fees"
+            worksheet.Cells(5, co.getNext()) = "Reflow Flag"
+            worksheet.Cells(5, co.getNext()) = "Lot Selection Method"
             rowNum = 7
             ' Column order in DataReader:
             '   0 - orderid, 1 - shortname (security), 2 - ISIN,
@@ -1251,24 +1288,35 @@ Endofloop:          Loop
             '   6 - allocprice, 7 - principal, 8 - commission,
             '   9 - secfee, 10 - otherfee, 11 - totalamount,
             '  12 - brokerid, 13 - tktchrg, 14 - fxrate
-            '   20 - fund
+            '   20 - fund, 23 - cusip
             While myReader.Read()
                 Dim co2 As New CounterObj()
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(3).ToString ' trancode
                 worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(5), "##,##0.00")    ' allocqty
+                Dim tmp As String = myReader.GetValue(1).ToString
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(1).ToString   ' security
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(6), "##,##0.0000")        ' allocprice
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(11), "##,##0.00")      ' total (net) amount
+                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(6), "##,##0.000000")        ' allocprice MB set to 6 decimals on 02/20/2025 as requested by Dom
+                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(11), "##,##0.00")      ' total (net) amount as requested by Dom Merlucci
+                'worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(7), "##,##0.00")      ' Net Amount
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(12).ToString         ' broker
                 worksheet.Cells(rowNum, co2.getNext()) = String.Empty ' Posted T+1
                 worksheet.Cells(rowNum, co2.getNext()) = String.Empty ' BNY Initial
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(20).ToString         ' fund
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(16).ToString         ' sedol
+                ' prevent excel to drop leading zeros
+                Dim colNum As Int16 = co2.getNext()
+                worksheet.Cells.NumberFormat = "@"
+                worksheet.Cells(rowNum, colNum) = myReader.GetValue(16).ToString         ' sedol
+
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(19).ToString         ' security currency
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(4).ToString         ' trade date
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(17).ToString         ' settle date
                 worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(22), "##,##0.00")       ' net fees
                 worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(18).ToString    ' broker name
+                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(23).ToString    ' cusip
+                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(8), "##,##0.00")       'commission
+                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(24), "##,##0.00")       'other fees
+                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(25).ToString    ' reflow flag
+                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(26).ToString    ' lot selection method
                 rowNum += 1
 
             End While
@@ -1288,7 +1336,7 @@ Endofloop:          Loop
             Return 1
         Catch ex As Exception
             screen.Text += vbCrLf + ex.Message
-        Return -1
+            Return -1
         End Try
 
     End Function
@@ -1523,7 +1571,9 @@ Endofloop:          Loop
             worksheet.Cells(5, 3) = "Qty"
             worksheet.Cells(5, 4) = "Price"
             worksheet.Cells(5, 5) = "Broker"
-            worksheet.Range("A5", "E5").Font.Bold = True
+            worksheet.Cells(5, 6) = "Broker ID"
+
+            worksheet.Range("A5", "F5").Font.Bold = True
 
             'worksheet.Cells(5, 5) = "Net Amount"
             'worksheet.Cells(5, 6) = "Broker"
@@ -1540,8 +1590,9 @@ Endofloop:          Loop
                 worksheet.Cells(rowNum, 1) = myReader.GetValue(0).ToString ' security
                 worksheet.Cells(rowNum, 4) = Format(myReader.GetValue(1), "##,##0.00000")       ' avg price 
                 worksheet.Cells(rowNum, 2) = myReader.GetValue(2).ToString   ' tran code
-                worksheet.Cells(rowNum, 3) = Format(myReader.GetValue(4), "##,##0.00")        ' order qty
+                worksheet.Cells(rowNum, 3) = Format(myReader.GetValue(4), "##,##0")        ' order qty
                 worksheet.Cells(rowNum, 5) = myReader.GetValue(5).ToString ' broker
+                worksheet.Cells(rowNum, 6) = myReader.GetValue(6).ToString ' broker id
                 rowNum += 1
 
             End While
@@ -1554,12 +1605,14 @@ Endofloop:          Loop
             rowNum += 1
 
             worksheet.Cells(rowNum, 1) = "Security"
-            worksheet.Cells(rowNum, 2) = "Portfolio"
-            worksheet.Cells(rowNum, 3) = "Tran Code"
-            worksheet.Cells(rowNum, 4) = "Qty"
-            worksheet.Cells(rowNum, 5) = "Price"
+            worksheet.Cells(rowNum, 2) = "Portfolio ID"
+            worksheet.Cells(rowNum, 3) = "Portfolio"
+            worksheet.Cells(rowNum, 4) = "Tran Code"
+            worksheet.Cells(rowNum, 5) = "Qty"
+            worksheet.Cells(rowNum, 6) = "Price"
+            worksheet.Cells(rowNum, 7) = "Broker ID"
 
-            worksheet.Range("A" + rowNum.ToString, "E" + rowNum.ToString).Font.Bold = True
+            worksheet.Range("A" + rowNum.ToString, "G" + rowNum.ToString).Font.Bold = True
 
             rowNum += 1
             Dim Conn2 As New SqlConnection(moxyCon)
@@ -1578,10 +1631,13 @@ Endofloop:          Loop
                     worksheet.Cells(rowNum, 1) = allocReader.GetValue(3).ToString ' security
                 End If
                 sec = allocReader.GetValue(3).ToString
-                worksheet.Cells(rowNum, 2) = allocReader.GetValue(2).ToString ' portfolio
-                worksheet.Cells(rowNum, 3) = allocReader.GetValue(5).ToString   ' tran code
-                worksheet.Cells(rowNum, 4) = Format(allocReader.GetValue(7), "##,##0.00")        ' order qty
-                worksheet.Cells(rowNum, 5) = Format(allocReader.GetValue(8), "##,##0.00000")       ' avg price 
+
+                worksheet.Cells(rowNum, 2) = allocReader.GetString(1) ' portfolio id
+                worksheet.Cells(rowNum, 3) = allocReader.GetValue(2).ToString ' portfolio
+                worksheet.Cells(rowNum, 4) = allocReader.GetValue(5).ToString   ' tran code
+                worksheet.Cells(rowNum, 5) = Format(allocReader.GetValue(7), "##,##0")        ' order qty
+                worksheet.Cells(rowNum, 6) = Format(allocReader.GetValue(8), "##,##0.00000")       ' avg price 
+                worksheet.Cells(rowNum, 7) = Format(allocReader.GetString(14))       ' broker id 
 
                 rowNum += 1
 
@@ -1625,7 +1681,7 @@ Endofloop:          Loop
             PortDate.Value = asOfDate
 
             Dim da As New SqlDataAdapter(Cmd)
-            Dim dt As New DataTable()
+            Dim dt As New System.Data.DataTable()
             da.Fill(dt)
 
 
@@ -1657,6 +1713,356 @@ Endofloop:          Loop
     End Function
 
 
+    Public Function getOffshoreFundsRecapsFromPortia(ByVal aStartDate As String, ByVal aEndDate As String, ByVal aPortiaConStr As String) As Integer
+        Dim objOpt As Object = System.Reflection.Missing.Value
+        Dim rowNum As Integer
+        Try
+
+            Dim ufunc As String = ReadConfigSetting("OffshoreFundsRecapFN")
+
+            ' Connection string
+            Dim connectionString As String = aPortiaConStr
+
+
+            ' Query to execute the table-valued function
+            Dim query As String = $"SELECT * FROM {ufunc}(@start_date, @end_date) ORDER BY TradeDate, PortId"
+
+            ' Parameters
+            Dim startDate As Date = aStartDate
+            Dim endDate As Date = aEndDate
+
+            ' Use a connection to execute the query
+            Using connection As New SqlConnection(connectionString)
+                Try
+                    ' Open the connection
+                    connection.Open()
+
+                    ' Create a command object
+                    Using command As New SqlCommand(query, connection)
+                        ' Add parameters
+                        command.Parameters.AddWithValue("@start_date", startDate)
+                        command.Parameters.AddWithValue("@end_date", endDate)
+
+                        ' Execute the command and read the data
+                        Using reader As SqlDataReader = command.ExecuteReader()
+                            ' Check if there are rows
+                            If reader.HasRows Then
+
+                                ' create a new excel file
+                                Dim oXL As New Excel.Application
+                                Dim theWorkbook As Excel.Workbook
+                                Dim worksheet As Excel.Worksheet
+
+                                theWorkbook = oXL.Workbooks.Add(objOpt)
+                                worksheet = theWorkbook.ActiveSheet
+
+                                ' create header
+                                worksheet.Cells(1, 1) = "Date Range"
+                                worksheet.Cells(1, 2) = aStartDate + " -- " + aEndDate
+
+                                rowNum = 3
+
+                                worksheet.Cells(rowNum, 1) = "Order ID"
+                                worksheet.Cells(rowNum, 2) = "Portfolio"
+                                worksheet.Cells(rowNum, 3) = "Security"
+                                worksheet.Cells(rowNum, 4) = "Symbol"
+                                worksheet.Cells(rowNum, 5) = "Tran Code"
+                                worksheet.Cells(rowNum, 6) = "Trade Date"
+                                worksheet.Cells(rowNum, 7) = "Qty"
+                                worksheet.Cells(rowNum, 8) = "Price"
+                                worksheet.Cells(rowNum, 9) = "Order TimeStamp"
+                                worksheet.Cells(rowNum, 10) = "Order TimeStamp Time Zone"
+
+                                ' Loop through the rows
+                                rowNum = 4
+
+                                While reader.Read()
+
+                                    worksheet.Cells(rowNum, 1) = reader("orderid").ToString ' orderid
+                                    worksheet.Cells(rowNum, 2) = reader("PortId").ToString   ' portid
+                                    worksheet.Cells(rowNum, 3) = reader("shortname").ToString   ' sec name
+                                    worksheet.Cells(rowNum, 4) = reader("symbol").ToString   ' symbol
+                                    worksheet.Cells(rowNum, 5) = reader("trancode").ToString   ' tran code
+                                    worksheet.Cells(rowNum, 6) = reader("TradeDate").ToString   ' trade date
+                                    worksheet.Cells(rowNum, 7) = Format(reader("quantity"), "##,##0")        ' order qty
+                                    worksheet.Cells(rowNum, 8) = Format(reader("price"), "##,##0.##")        ' price
+                                    worksheet.Cells(rowNum, 9) = reader("OrderTimeStamp").ToString ' time stamp
+                                    worksheet.Cells(rowNum, 10) = reader("OrderTimeStampTimeZone").ToString   ' time zone
+
+                                    rowNum += 1
+
+
+                                End While
+
+                                reader.Close()
+
+                                ' save generated Excel file
+                                worksheet.Rows.Font.Size = 11
+                                worksheet.Columns.AutoFit()
+                                theWorkbook.SaveAs(fName, objOpt, objOpt, objOpt, objOpt, objOpt, Excel.XlSaveAsAccessMode.xlShared, objOpt, objOpt, objOpt, objOpt, objOpt)
+                                theWorkbook.Close(False, objOpt, objOpt)
+
+                                Marshal.ReleaseComObject(worksheet)
+                                Marshal.ReleaseComObject(theWorkbook)
+                                Marshal.ReleaseComObject(oXL)
+                                worksheet = Nothing
+                                theWorkbook = Nothing
+                                oXL = Nothing
+
+                            Else
+                                MsgBox("No rows found.", vbOK, "Execute Result")
+                            End If
+                        End Using
+
+                    End Using
+                Catch ex As Exception
+                    ' Handle exceptions
+                    MsgBox("Error: " & ex.Message)
+                End Try
+            End Using
+
+
+
+            Return 1
+        Catch ex As Exception
+            screen.Text += vbCrLf + ex.Message
+            Return -1
+        End Try
+
+    End Function
+
+    Public Function GetOffshoreFundsRecapsFromPortiaRef(
+    ByVal aStartDate As String,
+    ByVal aEndDate As String,
+    ByVal aPortiaConStr As String,
+    ByVal aFilePath As String) As Integer
+
+        ' Validate and parse dates
+        Dim startDate As Date
+        Dim endDate As Date
+        If Not Date.TryParse(aStartDate, startDate) OrElse Not Date.TryParse(aEndDate, endDate) Then
+            Throw New ArgumentException("Invalid start or end date")
+        End If
+
+        ' Read function name from configuration
+        Dim ufunc As String = ReadConfigSetting("OffshoreFundsRecapFN")
+        If String.IsNullOrWhiteSpace(ufunc) Then
+            Throw New InvalidOperationException("Function name not found in configuration")
+        End If
+
+        ' SQL query
+        Dim query As String = $"SELECT * FROM {ufunc}(@start_date, @end_date) ORDER BY TradeDate, PortId"
+
+        ' Initialize Excel application
+        Dim oXL As Excel.Application = Nothing
+        Dim theWorkbook As Excel.Workbook = Nothing
+        Dim worksheet As Excel.Worksheet = Nothing
+
+        Try
+            ' Open SQL connection and execute query
+            Using connection As New SqlConnection(aPortiaConStr)
+                connection.Open()
+                Using command As New SqlCommand(query, connection)
+                    command.Parameters.AddWithValue("@start_date", startDate)
+                    command.Parameters.AddWithValue("@end_date", endDate)
+
+                    Using reader As SqlDataReader = command.ExecuteReader()
+                        If Not reader.HasRows Then
+                            MsgBox("No rows found.", vbOK, "Execute Result")
+                            Return 0
+                        End If
+
+                        Try
+                            For i As Integer = 0 To reader.FieldCount - 1
+                                Dim colName As String = reader.GetName(i)
+                                Console.WriteLine($"Column {i + 1}: {colName}")
+                            Next
+                        Catch ex As Exception
+                            screen.AppendText($"Error: {ex.Message}" + Environment.NewLine)
+                        End Try
+
+
+                        ' Create Excel workbook
+                        oXL = New Excel.Application()
+                        theWorkbook = oXL.Workbooks.Add()
+                        worksheet = theWorkbook.ActiveSheet
+
+                        ' Write header
+                        WriteExcelHeader(worksheet, aStartDate, aEndDate)
+
+                        ' Write data rows
+                        Dim rowNum As Integer = 4
+                        While reader.Read()
+                            WriteExcelRow(worksheet, rowNum, reader)
+                            rowNum += 1
+                        End While
+
+                        ' Format and save Excel file
+                        FormatAndSaveExcel(worksheet, theWorkbook, aFilePath)
+                    End Using
+                End Using
+            End Using
+
+            Return 1
+
+        Catch ex As Exception
+            MsgBox("Error: " & ex.Message & vbCrLf & ex.StackTrace, vbCritical, "Error")
+            Return -1
+
+        Finally
+            ' Release Excel COM objects
+            If worksheet IsNot Nothing Then Marshal.ReleaseComObject(worksheet)
+            If theWorkbook IsNot Nothing Then Marshal.ReleaseComObject(theWorkbook)
+            If oXL IsNot Nothing Then
+                oXL.Quit()
+                Marshal.ReleaseComObject(oXL)
+            End If
+
+            worksheet = Nothing
+            theWorkbook = Nothing
+            oXL = Nothing
+            GC.Collect()
+            GC.WaitForPendingFinalizers()
+        End Try
+    End Function
+
+    ' Helper function to write Excel header
+    Private Sub WriteExcelHeader(ByVal worksheet As Excel.Worksheet, ByVal aStartDate As String, ByVal aEndDate As String)
+        worksheet.Cells(1, 1) = "Date Range"
+        worksheet.Cells(1, 2) = $"{aStartDate} -- {aEndDate}"
+        worksheet.Cells(3, 1) = "Order ID"
+        worksheet.Cells(3, 2) = "Portfolio"
+        worksheet.Cells(3, 3) = "Security"
+        worksheet.Cells(3, 4) = "Symbol"
+        worksheet.Cells(3, 5) = "Tran Code"
+        worksheet.Cells(3, 6) = "Trade Date"
+        worksheet.Cells(3, 7) = "Qty"
+        worksheet.Cells(3, 8) = "Price"
+        worksheet.Cells(3, 9) = "Order TimeStamp"
+        worksheet.Cells(3, 10) = "Order TimeStamp Time Zone"
+    End Sub
+
+    ' Helper function to write a row of data
+    Private Sub WriteExcelRow(ByVal worksheet As Excel.Worksheet, ByVal rowNum As Integer, ByVal reader As SqlDataReader)
+        worksheet.Cells(rowNum, 1) = reader("orderid").ToString()
+        worksheet.Cells(rowNum, 2) = reader("PortId").ToString()
+        worksheet.Cells(rowNum, 3) = reader("shortname").ToString()
+        worksheet.Cells(rowNum, 4) = reader("symbol").ToString()
+        worksheet.Cells(rowNum, 5) = reader("trancode").ToString()
+        worksheet.Cells(rowNum, 6) = reader("TradeDate").ToString()
+        worksheet.Cells(rowNum, 7) = Format(reader("quantity"), "##,##0")
+        worksheet.Cells(rowNum, 8) = Format(reader("price"), "##,##0.##")
+        worksheet.Cells(rowNum, 9) = reader("OrderTimeStamp").ToString()
+        worksheet.Cells(rowNum, 10) = reader("OrderTimeStampTimeZone").ToString()
+    End Sub
+
+    ' Helper function to format and save Excel file
+    Private Sub FormatAndSaveExcel(ByVal worksheet As Excel.Worksheet, ByVal theWorkbook As Excel.Workbook, ByVal filePath As String)
+        worksheet.Rows.Font.Size = 11
+        worksheet.Columns.AutoFit()
+
+        Dim fName As String = filePath
+        theWorkbook.SaveAs(fName)
+        theWorkbook.Close(False)
+    End Sub
+
+    Public Function getOffshoreFundsRecap(ByVal aStartDate As String, ByVal aEndDate As String) As Integer
+        Dim objOpt As Object = System.Reflection.Missing.Value
+        Dim rowNum As Integer
+        Dim sec As String = ""
+
+        Try
+            If File.Exists(fName) Then
+                File.Delete(fName)
+            End If
+
+            Dim Conn As New SqlConnection(moxyCon)
+            Dim Cmd As New SqlCommand("usp_OffshreFundsRecap", Conn)
+            Cmd.CommandType = CommandType.StoredProcedure
+
+            Dim StartDate As New SqlParameter
+            StartDate = Cmd.Parameters.Add("@startdate", SqlDbType.DateTime)
+            StartDate.Direction = ParameterDirection.Input
+            StartDate.Value = aStartDate
+
+            Dim EndDate As New SqlParameter
+            EndDate = Cmd.Parameters.Add("@enddate", SqlDbType.DateTime)
+            EndDate.Direction = ParameterDirection.Input
+            EndDate.Value = aEndDate
+
+            Conn.Open()
+            Dim myReader As SqlDataReader = Cmd.ExecuteReader()
+
+
+            ' create a new excel file
+            Dim oXL As New Excel.Application
+            Dim theWorkbook As Excel.Workbook
+            Dim worksheet As Excel.Worksheet
+
+            theWorkbook = oXL.Workbooks.Add(objOpt)
+            worksheet = theWorkbook.ActiveSheet
+
+            ' create header
+            worksheet.Cells(1, 1) = "Date Range"
+            worksheet.Cells(1, 2) = aStartDate + " -- " + aEndDate
+
+            rowNum = 3
+
+            worksheet.Cells(rowNum, 1) = "Order ID"
+            worksheet.Cells(rowNum, 2) = "Portfolio"
+            worksheet.Cells(rowNum, 3) = "Security"
+            worksheet.Cells(rowNum, 4) = "Symbol"
+            worksheet.Cells(rowNum, 5) = "Tran Code"
+            worksheet.Cells(rowNum, 6) = "Trade Date"
+            worksheet.Cells(rowNum, 7) = "Qty"
+            worksheet.Cells(rowNum, 8) = "Price"
+            worksheet.Cells(rowNum, 9) = "Order TimeStamp"
+            worksheet.Cells(rowNum, 10) = "Order TimeStamp Time Zone"
+
+
+
+
+
+            rowNum = 4
+
+
+            While myReader.Read()
+                worksheet.Cells(rowNum, 1) = myReader.GetValue(0).ToString ' orderid
+                'worksheet.Cells(rowNum, 4) = Format(myReader.GetValue(1), "##,##0.00000")       ' avg price 
+                worksheet.Cells(rowNum, 2) = myReader.GetValue(1).ToString   ' portid
+                worksheet.Cells(rowNum, 3) = myReader.GetValue(2).ToString   ' sec name
+                worksheet.Cells(rowNum, 4) = myReader.GetValue(3).ToString   ' symbol
+                worksheet.Cells(rowNum, 5) = myReader.GetValue(4).ToString   ' tran code
+                worksheet.Cells(rowNum, 6) = myReader.GetValue(5).ToString   ' trade date
+                worksheet.Cells(rowNum, 7) = Format(myReader.GetValue(6), "##,##0")        ' order qty
+                worksheet.Cells(rowNum, 8) = Format(myReader.GetValue(7), "##,##0.##")        ' price
+                worksheet.Cells(rowNum, 9) = myReader.GetValue(8).ToString ' time satmp
+                worksheet.Cells(rowNum, 10) = myReader.GetValue(9).ToString   ' time zome
+
+                rowNum += 1
+
+            End While
+            'worksheet.Range("All").Font.Size = 10
+            myReader.Close()
+
+            ' save generated Excel file
+            worksheet.Rows.Font.Size = 11
+            worksheet.Columns.AutoFit()
+            theWorkbook.SaveAs(fName, objOpt, objOpt, objOpt, objOpt, objOpt, Excel.XlSaveAsAccessMode.xlShared, objOpt, objOpt, objOpt, objOpt, objOpt)
+            theWorkbook.Close(False, objOpt, objOpt)
+
+            oXL.Quit()
+            Conn.Close()
+
+            Return 1
+        Catch ex As Exception
+            screen.Text += vbCrLf + ex.Message
+            Return -1
+        End Try
+
+    End Function
+
+
     Public Function getPortfolioRecap(ByVal asOfDate As DateTime) As Integer
         ' if more accounts will require daily recaps,
         ' add parameter - account
@@ -1671,6 +2077,8 @@ Endofloop:          Loop
             End If
 
             Dim Conn As New SqlConnection(moxyCon)
+
+
             Dim Cmd As New SqlCommand("usp_TradeingRecapDaily", Conn)
             Cmd.CommandType = CommandType.StoredProcedure
             Dim PortDate As New SqlParameter
@@ -1695,15 +2103,19 @@ Endofloop:          Loop
 
             worksheet.Cells(2, 1) = "Authorized by"
             worksheet.Cells(2, 2) = "AM"
-            worksheet.Cells(3, 1) = "Daily Domestic Trade Exceution Report"
+            worksheet.Cells(3, 1) = "Daily Domestic Trade Execution Report"
 
             worksheet.Cells(5, 1) = "Security"
             worksheet.Cells(5, 2) = "Trancode"
             worksheet.Cells(5, 3) = "Qty"
             worksheet.Cells(5, 4) = "Price"
             worksheet.Cells(5, 5) = "Broker"
+            worksheet.Cells(5, 6) = "Cusip"
+            worksheet.Cells(5, 7) = "Reflow Flag"
+            worksheet.Cells(5, 8) = "Lot Selection Method"
 
-            worksheet.Range("A5", "E5").Font.Bold = True
+
+            worksheet.Range("A5", "H5").Font.Bold = True
 
             'worksheet.Cells(5, 5) = "Net Amount"
             'worksheet.Cells(5, 6) = "Broker"
@@ -1720,8 +2132,11 @@ Endofloop:          Loop
                 worksheet.Cells(rowNum, 1) = myReader.GetValue(0).ToString ' security
                 worksheet.Cells(rowNum, 4) = Format(myReader.GetValue(1), "##,##0.00000")       ' avg price 
                 worksheet.Cells(rowNum, 2) = myReader.GetValue(2).ToString   ' tran code
-                worksheet.Cells(rowNum, 3) = Format(myReader.GetValue(4), "##,##0.00")        ' order qty
+                worksheet.Cells(rowNum, 3) = Format(myReader.GetValue(4), "##,##0")        ' order qty
                 worksheet.Cells(rowNum, 5) = myReader.GetValue(5).ToString ' broker
+                worksheet.Cells(rowNum, 6) = myReader.GetValue(6).ToString   ' cusip
+                worksheet.Cells(rowNum, 7) = myReader.GetValue(7).ToString   ' reflow
+                worksheet.Cells(rowNum, 8) = myReader.GetValue(8).ToString   ' lot selection method
                 rowNum += 1
 
             End While
@@ -1760,7 +2175,7 @@ Endofloop:          Loop
                 sec = allocReader.GetValue(3).ToString
                 worksheet.Cells(rowNum, 2) = allocReader.GetValue(2).ToString ' portfolio
                 worksheet.Cells(rowNum, 3) = allocReader.GetValue(5).ToString   ' tran code
-                worksheet.Cells(rowNum, 4) = Format(allocReader.GetValue(7), "##,##0.00")        ' order qty
+                worksheet.Cells(rowNum, 4) = Format(allocReader.GetValue(7), "##,##0")        ' order qty
                 worksheet.Cells(rowNum, 5) = Format(allocReader.GetValue(8), "##,##0.00000")       ' avg price 
 
                 rowNum += 1
@@ -1847,7 +2262,7 @@ Endofloop:          Loop
                     repInfo.AxysMacro = "mbaman02.mac"
                     repInfo.Portfolio = "+@" + row("pId") + "hdg"
                     repInfo.PositionDate = asOfDate
-                    repInfo.OutputFile = Application.StartupPath + "\" + row("pId").ToString + "pos.txt"
+                    repInfo.OutputFile = System.Windows.Forms.Application.StartupPath + "\" + row("pId").ToString + "pos.txt"
                     If File.Exists(repInfo.OutputFile) Then
                         File.Delete(repInfo.OutputFile)
                     End If
@@ -1885,7 +2300,7 @@ Endofloop:          Loop
                             repInfo.VarExt = """-l$fx us#_option 3"""
                     End Select
                     repInfo.AxysMacro = "mbliab.mac"
-                    repInfo.OutputFile = Application.StartupPath + "\" + row("pId").ToString + "liab.txt"
+                    repInfo.OutputFile = System.Windows.Forms.Application.StartupPath + "\" + row("pId").ToString + "liab.txt"
                     If File.Exists(repInfo.OutputFile) Then
                         File.Delete(repInfo.OutputFile)
                     End If
@@ -1917,7 +2332,7 @@ Endofloop:          Loop
                             repInfo.VarExt = """-l$fx us#_option 4"""
                     End Select
                     repInfo.AxysMacro = "mbliab.mac"
-                    repInfo.OutputFile = Application.StartupPath + "\" + row("pId").ToString + "3Mliab.txt"
+                    repInfo.OutputFile = System.Windows.Forms.Application.StartupPath + "\" + row("pId").ToString + "3Mliab.txt"
                     If File.Exists(repInfo.OutputFile) Then
                         File.Delete(repInfo.OutputFile)
                     End If
@@ -1942,14 +2357,14 @@ Endofloop:          Loop
 
     End Function
 
-    Protected Function createHdgExpCols(ByRef aDT As DataTable) As Integer
+    Protected Function createHdgExpCols(ByRef aDT As System.Data.DataTable) As Integer
         Dim rtn As Integer = 0
         Dim col As DataColumn
         Dim mSig As String = (New System.Diagnostics.StackFrame()).GetMethod().Name
 
 
         Try
-            aDT = New DataTable
+            aDT = New System.Data.DataTable
 
             col = New DataColumn()
             col.DataType = System.Type.GetType("System.String")
@@ -2062,7 +2477,7 @@ Endofloop:          Loop
             p = Process.Start(axysProc)
             While Not p.HasExited
                 ' wait for the process to finish
-                Application.DoEvents()
+                System.Windows.Forms.Application.DoEvents()
             End While
             If File.Exists(fName) Then
                 screen.Text += vbCrLf + "Axys created positions file " + fName
@@ -2110,7 +2525,7 @@ Endofloop:          Loop
             p = Process.Start(axysProc)
             While Not p.HasExited
                 ' wait for the process to finish
-                Application.DoEvents()
+                System.Windows.Forms.Application.DoEvents()
             End While
             If File.Exists(fName) Then
                 screen.Text += vbCrLf + "Axys created positions file " + fName
@@ -2191,7 +2606,7 @@ Endofloop:          Loop
                     rtn = rtn
                 End If
                 ri.PositionDate = asOfDate
-                ri.OutputFile = Application.StartupPath + "\" + ri.Portfolio + "pos.txt"
+                ri.OutputFile = System.Windows.Forms.Application.StartupPath + "\" + ri.Portfolio + "pos.txt"
                 If File.Exists(ri.OutputFile) Then
                     File.Delete(ri.OutputFile)
                 End If
@@ -2302,7 +2717,7 @@ Endofloop:          Loop
         Return rtn
     End Function
 
-    Protected Function createExclHdgRep(ByVal aDT As DataTable, ByVal asOfDate As Date, ByVal aExclFile As String) As Integer
+    Protected Function createExclHdgRep(ByVal aDT As System.Data.DataTable, ByVal asOfDate As Date, ByVal aExclFile As String) As Integer
         Dim rtn As Integer = 0
         Dim mSig As String = (New System.Diagnostics.StackFrame()).GetMethod().Name
         Dim cnt As Integer = 0
@@ -2423,7 +2838,7 @@ Endofloop:          Loop
             list.Add(createHeaderLine())
             ' create body
             For Each trade As GTSSObj In tradesList
-                Application.DoEvents()
+                System.Windows.Forms.Application.DoEvents()
                 If trade.cashTran Or trade.excludedCurrency Then Continue For
                 cnt += 1
 
@@ -2454,13 +2869,15 @@ Endofloop:          Loop
 
             sTradeLine = "TWEEUSNYXXX" + Chr(9) + g.bicCode + Chr(9) + "15A" + Chr(9)
             sTradeLine += g.newSeed.ToString() + Chr(9) + "" + Chr(9) + "NEWT" + Chr(9)
-            sTradeLine += "" + Chr(9) + Left(g.bicCode, 6) + "TWEEUS" + cnt.ToString() + Chr(9) + "" + Chr(9)
+            sTradeLine += "" + Chr(9) + Strings.Left(g.bicCode, 6) + "TWEEUS" + cnt.ToString() + Chr(9) + "" + Chr(9)
             sTradeLine += "" + Chr(9) + "TWEEUSNYXXX" + Chr(9) + g.bicCode + Chr(9)
             sTradeLine += "" + Chr(9) + g.fixingDate + Chr(9) + "15B" + Chr(9)
             sTradeLine += g.tradeDate + Chr(9) + g.settleDate + Chr(9) + g.fxRate + Chr(9)
             sTradeLine += UCase(g.curr) + g.localAmount + Chr(9) + g.deliveryAgent + Chr(9) + "" + Chr(9)
             sTradeLine += g.receivingAgent + Chr(9) + UCase(g.curr2) + g.usdAmount + Chr(9) + "" + Chr(9)
-            sTradeLine += "" + Chr(9) + g.receivingAgent2 + Chr(9) + "/ABIC/" + g.bicCode + "/NAME/UKWN" + Chr(9)
+            sTradeLine += "" + Chr(9) + g.receivingAgent2 + Chr(9) + "/NETS/" + Chr(9)
+            'sTradeLine += "" + Chr(9) + g.receivingAgent2 + Chr(9) + "/NETS/" + g.bicCode + Chr(9)
+            ' sTradeLine += "" + Chr(9) + g.receivingAgent2 + Chr(9) + "/ABIC/" + g.bicCode + "/NAME/UKWN" + Chr(9)
             sTradeLine += "15C" + Chr(9) + "" + Chr(9) + "" + Chr(9)
             sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)
             sTradeLine += "" + Chr(9) + "" + Chr(9) + "" + Chr(9)

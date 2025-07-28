@@ -117,7 +117,89 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <assembly alias="System.Drawing" name="System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a" />
+  <data name="TextBox1.Location" type="System.Drawing.Point, System.Drawing">
+    <value>8, 312</value>
+  </data>
+  <data name="TextBox1.Size" type="System.Drawing.Size, System.Drawing">
+    <value>816, 96</value>
+  </data>
+  <data name="Button_FXConPreAlloc.Location" type="System.Drawing.Point, System.Drawing">
+    <value>8, 416</value>
+  </data>
+  <data name="Button_FXConPreAlloc.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="Button_FXConTradesAlloc.Location" type="System.Drawing.Point, System.Drawing">
+    <value>8, 448</value>
+  </data>
+  <data name="Button_FXConTradesAlloc.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="DataGrid1.Location" type="System.Drawing.Point, System.Drawing">
+    <value>8, 8</value>
+  </data>
+  <data name="DataGrid1.Size" type="System.Drawing.Size, System.Drawing">
+    <value>816, 288</value>
+  </data>
+  <data name="Button_ImportTRN.Location" type="System.Drawing.Point, System.Drawing">
+    <value>616, 416</value>
+  </data>
+  <data name="Button_ImportTRN.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="btn_AxysFCTrades.Location" type="System.Drawing.Point, System.Drawing">
+    <value>616, 448</value>
+  </data>
+  <data name="btn_AxysFCTrades.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="btnFundTrades.Location" type="System.Drawing.Point, System.Drawing">
+    <value>327, 416</value>
+  </data>
+  <data name="btnFundTrades.Size" type="System.Drawing.Size, System.Drawing">
+    <value>153, 23</value>
+  </data>
+  <data name="Button1.Location" type="System.Drawing.Point, System.Drawing">
+    <value>328, 448</value>
+  </data>
+  <data name="Button1.Size" type="System.Drawing.Size, System.Drawing">
+    <value>152, 23</value>
+  </data>
+  <data name="ButtonHedgeExposure.Location" type="System.Drawing.Point, System.Drawing">
+    <value>328, 477</value>
+  </data>
+  <data name="ButtonHedgeExposure.Size" type="System.Drawing.Size, System.Drawing">
+    <value>152, 23</value>
+  </data>
+  <data name="Button2.Location" type="System.Drawing.Point, System.Drawing">
+    <value>616, 477</value>
+  </data>
+  <data name="Button2.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="ButtonMoxyExport.Location" type="System.Drawing.Point, System.Drawing">
+    <value>12, 477</value>
+  </data>
+  <data name="ButtonMoxyExport.Size" type="System.Drawing.Size, System.Drawing">
+    <value>204, 23</value>
+  </data>
+  <data name="Button3.Location" type="System.Drawing.Point, System.Drawing">
+    <value>616, 508</value>
+  </data>
+  <data name="Button3.Size" type="System.Drawing.Size, System.Drawing">
+    <value>208, 23</value>
+  </data>
+  <data name="btnCreateGTSSFile.Location" type="System.Drawing.Point, System.Drawing">
+    <value>503, 418</value>
+  </data>
+  <data name="btnCreateGTSSFile.Size" type="System.Drawing.Size, System.Drawing">
+    <value>99, 19</value>
+  </data>
+  <data name="$this.AutoScaleBaseSize" type="System.Drawing.Size, System.Drawing">
+    <value>5, 13</value>
+  </data>
   <data name="$this.Text" xml:space="preserve">
-    <value>FXCon Trades Moxy 18 2020-01</value>
+    <value>FXCon Trades Moxy 18 2024-01</value>
   </data>
 </root>

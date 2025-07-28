@@ -3,3 +3,23 @@ Application version changes
 This app is created to work with Moxy 18.
 
 1. Reconnected to Moxy 18.
+
+08/09/2023
+
+2.01 Replace getCurrency function with getISOCurrency function
+2.02 For Trade Alloc button - show conversion instruction in datagridveiw
+2.03 Create function ufn_GetConversionInstruction that takes two currencies as args and
+        returns conversion instruction 'm' or 'd'
+
+9/11/2023
+
+3.01 Fix ZAR currency conversion instructions
+
+5/3/2024 add reflow trades from PORTIA to Funds Reacap
+
+5/31/2024 for GTSS file replace delivery agent, receiving agent, and beneficiary institution with '/NETS/' as requested by
+                FX Connect. They will maintain the values for these fields instead of us.
+
+08/26/2024 no decimals for quanttity on Domestic and International recaps
+
+12/10/2020 Switch data source for Offshore Funds Recaps from Moxy to Portia
