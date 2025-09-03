@@ -23,3 +23,5 @@ This app is created to work with Moxy 18.
 08/26/2024 no decimals for quanttity on Domestic and International recaps
 
 12/10/2020 Switch data source for Offshore Funds Recaps from Moxy to Portia
+
+08/25/2025 Fund Trading Recap - match DTCC trades with Moxy

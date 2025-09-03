@@ -1,14 +1,17 @@
-Imports System.IO
-Imports System.Data.SqlClient
-Imports Microsoft.Office.Interop
-Imports System.Text
-Imports System.Data
 Imports System.Collections.Generic
 Imports System.Configuration
+Imports System.Data
+Imports System.Data.SqlClient
+Imports System.IO
+Imports System.Linq
+Imports System.Reflection
+Imports System.Runtime.InteropServices
+Imports System.Text
+Imports System.Text.RegularExpressions
 Imports System.Windows.Forms
 Imports System.Windows.Forms.TextBox
+Imports Microsoft.Office.Interop
 Imports Microsoft.Office.Interop.Excel
-Imports System.Runtime.InteropServices
 
 
 Public Class FXConManager
@@ -1220,30 +1223,51 @@ Endofloop:          Loop
     End Function
 
 
-    Public Function getFundTradingRecapAllFunds(ByVal asOfDate As DateTime) As Integer
+    Public Function getFundTradingRecapAllFunds(ByVal asOfDate As DateTime, ByVal includeDTCCConfirms As Boolean) As Integer
         Dim rtn As Integer = 0
         Dim objOpt As Object = System.Reflection.Missing.Value
         Dim rowNum As Integer = 0
+        Dim confirmFile As String
+        ' Call the function to get the list of transactions.
+        'Dim confirmsList As List(Of DTCCTransaction)
+        Dim dtccTradesList As List(Of TradeAllocation)
         Try
+
+            Dim DTCCFolder As String = ReadConfigSetting("DTCCConfirmsFolder")
+
+            confirmFile = FindConfirmFile(DTCCFolder, asOfDate)
+
+            'confirmsList = ReadTransactionsFromFile(confirmFile, asOfDate)
+            dtccTradesList = ReadTradeAllocationsFromFile(confirmFile)
+            dtccTradesList.Sort(Function(a, b)
+                                    Dim result As Integer
+                                    ' First, compare by PortId
+                                    result = a.AcctID.CompareTo(b.AcctID)
+                                    ' If PortIds are the same, then compare by SecurityCurrency
+                                    If result = 0 Then
+                                        result = a.AllocSettleCurr.CompareTo(b.AllocSettleCurr)
+                                    End If
+                                    Return result
+                                End Function)
             If File.Exists(fName) Then
                 File.Delete(fName)
             End If
 
-            Dim Conn As New SqlConnection(moxyCon)
-            Dim Cmd As New SqlCommand("usp_FundTradesRecapAllFunds", Conn)
-            Cmd.CommandType = CommandType.StoredProcedure
-            Dim Portfolio As New SqlParameter
-            'Dim PortDate As New SqlParameter
-            'PortDate = Cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
-            'PortDate.Direction = ParameterDirection.Input
-            'PortDate.Value = asOfDate
-            Dim param As New SqlParameter("@rundate", SqlDbType.DateTime)
-            param.Direction = ParameterDirection.Input
-            param.Value = asOfDate
-            Cmd.Parameters.Add(param)
+            'Dim Conn As New SqlConnection(moxyCon)
+            'Dim Cmd As New SqlCommand("usp_FundTradesRecapAllFunds", Conn)
+            'Cmd.CommandType = CommandType.StoredProcedure
+            'Dim Portfolio As New SqlParameter
+            'Dim param As New SqlParameter("@rundate", SqlDbType.DateTime)
+            'param.Direction = ParameterDirection.Input
+            'param.Value = asOfDate
 
-            Conn.Open()
-            Dim myReader As SqlDataReader = Cmd.ExecuteReader()
+            'Cmd.Parameters.Add(param)
+
+            'Conn.Open()
+            'Dim myReader As SqlDataReader = Cmd.ExecuteReader()
+
+            Dim myReader As SqlDataReader = ExecuteFundTradesRecapAllFundsReader(asOfDate, moxyCon)
+
 
             ' create a new excel file
             Dim oXL As New Excel.Application
@@ -1255,7 +1279,9 @@ Endofloop:          Loop
 
             ' create header
             worksheet.Cells(1, 1) = "Trade Date"
-            worksheet.Cells(1, 2) = asOfDate.ToString("MM/dd/yyyy") + Space(5)
+            ' Sets the cell format to text
+            worksheet.Cells(1, 2).NumberFormat = "@"
+            worksheet.Cells(1, 2) = asOfDate.ToString("MM/dd/yyyy") & Space(5)
 
             worksheet.Cells(2, 1) = "Authorized by"
             worksheet.Cells(2, 2) = "AM"
@@ -1281,47 +1307,150 @@ Endofloop:          Loop
             worksheet.Cells(5, co.getNext()) = "Other Fees"
             worksheet.Cells(5, co.getNext()) = "Reflow Flag"
             worksheet.Cells(5, co.getNext()) = "Lot Selection Method"
+            worksheet.Cells(5, co.getNext()) = "Port Id"
+            worksheet.Cells(5, co.getNext()) = "ISIN"
+
             rowNum = 7
-            ' Column order in DataReader:
-            '   0 - orderid, 1 - shortname (security), 2 - ISIN,
-            '   3 - trancode, 4 - tradedate, 5 - allocqty,
-            '   6 - allocprice, 7 - principal, 8 - commission,
-            '   9 - secfee, 10 - otherfee, 11 - totalamount,
-            '  12 - brokerid, 13 - tktchrg, 14 - fxrate
-            '   20 - fund, 23 - cusip
+
+            ' Create a list to hold the transaction objects from Moxy.
+            Dim transactions As New List(Of Transaction)()
             While myReader.Read()
+
+                ' Create a new Transaction object and populate it from the reader using the constructor
+                Dim transaction As New Transaction(
+                        myReader.GetValue(3).ToString,
+                        myReader.GetValue(5).ToString,
+                        myReader.GetValue(1).ToString,
+                        Convert.ToDecimal(myReader.GetValue(6)),
+                        Convert.ToDecimal(myReader.GetValue(11)),
+                        myReader.GetValue(12).ToString,
+                        myReader.GetValue(19).ToString,
+                        CDate(myReader.GetValue(4)),
+                        CDate(myReader.GetValue(17)),
+                        Convert.ToDecimal(myReader.GetValue(22)),
+                        myReader.GetValue(18).ToString,
+                        myReader.GetValue(23).ToString,
+                        Convert.ToDecimal(myReader.GetValue(8)),
+                        Convert.ToDecimal(myReader.GetValue(24)),
+                        myReader.GetValue(15).ToString,
+                        myReader.GetValue(2).ToString,
+                        myReader.GetValue(20).ToString,
+                        myReader.GetValue(16).ToString, ' sedol
+                myReader.GetValue(25).ToString(),' reflow flag,
+                myReader.GetValue(26).ToString() ' lot selection method
+                    )
+
+                ' Add the new Transaction object to the list.
+                transactions.Add(transaction)
+            End While
+
+            transactions.Sort(Function(a, b)
+                                  Dim result As Integer
+                                  ' First, compare by PortId
+                                  result = a.PortId.CompareTo(b.PortId)
+                                  ' If PortIds are the same, then compare by SecurityCurrency
+                                  If result = 0 Then
+                                      result = a.SecurityCurrency.CompareTo(b.SecurityCurrency)
+                                  End If
+                                  Return result
+                              End Function)
+
+            For Each transaction As Transaction In transactions
+
                 Dim co2 As New CounterObj()
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(3).ToString ' trancode
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(5), "##,##0.00")    ' allocqty
-                Dim tmp As String = myReader.GetValue(1).ToString
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(1).ToString   ' security
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(6), "##,##0.000000")        ' allocprice MB set to 6 decimals on 02/20/2025 as requested by Dom
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(11), "##,##0.00")      ' total (net) amount as requested by Dom Merlucci
-                'worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(7), "##,##0.00")      ' Net Amount
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(12).ToString         ' broker
-                worksheet.Cells(rowNum, co2.getNext()) = String.Empty ' Posted T+1
-                worksheet.Cells(rowNum, co2.getNext()) = String.Empty ' BNY Initial
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(20).ToString         ' fund
+                ' Now assign the Transaction object's properties to the worksheet cells
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.TranCode
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Quantity
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Description
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Price
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.NetAmount
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.BrokerId
+                worksheet.Cells(rowNum, co2.getNext()) = String.Empty
+                worksheet.Cells(rowNum, co2.getNext()) = String.Empty
+
+                'worksheet.Cells(rowNum, co2.getNext()) = transaction.SecurityCurrency
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Fund
+
                 ' prevent excel to drop leading zeros
                 Dim colNum As Int16 = co2.getNext()
                 worksheet.Cells.NumberFormat = "@"
-                worksheet.Cells(rowNum, colNum) = myReader.GetValue(16).ToString         ' sedol
+                worksheet.Cells(rowNum, colNum) = transaction.Sedol
 
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(19).ToString         ' security currency
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(4).ToString         ' trade date
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(17).ToString         ' settle date
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(22), "##,##0.00")       ' net fees
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(18).ToString    ' broker name
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(23).ToString    ' cusip
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(8), "##,##0.00")       'commission
-                worksheet.Cells(rowNum, co2.getNext()) = Format(myReader.GetValue(24), "##,##0.00")       'other fees
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(25).ToString    ' reflow flag
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(26).ToString    ' lot selection method
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.SecurityCurrency
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.TradeDate
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.SettleDate
+
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.NetFees
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.BrokerName
+
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Cusip
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Commission
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.OtherFees
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.ReflowFlag
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.LotSelectionMethod
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.PortId
+                worksheet.Cells(rowNum, co2.getNext()) = transaction.Isin
+                rowNum += 1
+            Next
+
+
+            myReader.Close()
+
+            rowNum += 1
+
+            ' DTCC confirms
+
+            rowNum += 1
+            If dtccTradesList IsNot Nothing AndAlso dtccTradesList.Count > 0 AndAlso includeDTCCConfirms Then
+                worksheet.Cells(rowNum, 1) = "DTCC Confirms"
                 rowNum += 1
 
-            End While
-            myReader.Close()
-            rowNum += 1
+                Dim fundMap As Dictionary(Of String, String) = GetTweedyFunds()
+
+                For Each transaction As TradeAllocation In dtccTradesList
+                    Dim fund As String
+                    Try
+                        fund = fundMap(transaction.AcctID)
+                    Catch ex As Exception
+                        Continue For
+                    End Try
+                    Dim moxyMatchFound As Boolean = IsTransactionInAllocationList(transaction, transactions)
+                    Dim co3 As New CounterObj()
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.BS
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.QtyAlloc
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Security
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Price
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.NetCashAmount
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.ExecBroker
+                    worksheet.Cells(rowNum, co3.getNext()) = String.Empty
+                    worksheet.Cells(rowNum, co3.getNext()) = String.Empty
+                    worksheet.Cells(rowNum, co3.getNext()) = fund
+                    worksheet.Cells(rowNum, co3.getNext()) = "Identifier"
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.AllocSettleCurr
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.TradeDate
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.SettleDate
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Comm + transaction.Fees + transaction.CommAmount1 + transaction.CommAmount2 + transaction.CommAmount3
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.ExecBroker
+                    worksheet.Cells(rowNum, co3.getNext()) = "N/A"
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Comm
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.ChargesTaxesFeesAmount1 + transaction.ChargesTaxesFeesAmount2 + transaction.ChargesTaxesFeesAmount3
+                    worksheet.Cells(rowNum, co3.getNext()) = "No"
+                    worksheet.Cells(rowNum, co3.getNext()) = "High Cost"
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.AcctID
+                    worksheet.Cells(rowNum, co3.getNext()) = transaction.SecCode
+
+
+                    If moxyMatchFound Then
+                        worksheet.Range(worksheet.Cells(rowNum, 1), worksheet.Cells(rowNum, 2)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
+                        worksheet.Range(worksheet.Cells(rowNum, 4), worksheet.Cells(rowNum, 5)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
+                        worksheet.Range(worksheet.Cells(rowNum, 11), worksheet.Cells(rowNum, 14)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
+                        worksheet.Range(worksheet.Cells(rowNum, 21), worksheet.Cells(rowNum, 22)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
+                    End If
+
+                    rowNum += 1
+                Next
+            End If
+
 
             ' save generated Excel file
             worksheet.Columns.AutoFit()
@@ -1331,7 +1460,7 @@ Endofloop:          Loop
             oXL.Quit()
 
             myReader.Close()
-            Conn.Close()
+            'Conn.Close()
 
             Return 1
         Catch ex As Exception
@@ -1340,6 +1469,317 @@ Endofloop:          Loop
         End Try
 
     End Function
+
+    Public Sub ColorCell(startCell As Excel.Range, Optional fill As Color = Nothing)
+        If fill = Nothing Then fill = Color.LightGreen
+        startCell.Interior.Color = ColorTranslator.ToOle(fill)
+    End Sub
+    ''' <summary>
+    ''' Checks if a Transaction object is present in a list of TradeAllocation objects based on key properties.
+    ''' </summary>
+    ''' <param name="transaction">The Transaction object to search for.</param>
+    ''' <param name="allocationList">The list of TradeAllocation objects to search in.</param>
+    ''' <returns>True if a match is found, otherwise False.</returns>
+    Public Function IsTransactionInAllocationList(ByVal transaction As TradeAllocation, ByVal allocationList As List(Of Transaction)) As Boolean
+
+        Dim tranCode As String = transaction.BS.Trim().ToLower()
+
+        If tranCode.Contains("buy") Then
+            tranCode = "buy"
+        End If
+
+        For Each allocation As Transaction In allocationList
+
+            Dim qtyDiff As Decimal = Math.Abs(transaction.QtyAlloc - allocation.Quantity)
+            Dim amtDiff As Decimal = Math.Abs(transaction.NetCashAmount - allocation.NetAmount)
+            Dim tmp As Boolean = False
+            Dim quantity As Decimal = CDec(allocation.Quantity)
+            tmp = String.Equals(transaction.AcctID, allocation.PortId, StringComparison.OrdinalIgnoreCase)
+            tmp = String.Equals(tranCode, allocation.TranCode, StringComparison.OrdinalIgnoreCase)
+            tmp = String.Equals(transaction.SecCode, allocation.Isin, StringComparison.OrdinalIgnoreCase)
+            tmp = String.Equals(transaction.AllocSettleCurr, allocation.SecurityCurrency, StringComparison.OrdinalIgnoreCase)
+
+            If String.Equals(transaction.AcctID, allocation.PortId, StringComparison.OrdinalIgnoreCase) And
+                    String.Equals(tranCode, allocation.TranCode, StringComparison.OrdinalIgnoreCase) And
+                String.Equals(transaction.SecCode, allocation.Isin, StringComparison.OrdinalIgnoreCase) And
+                    Math.Abs(transaction.QtyAlloc - quantity) <= 0.01D And
+                 Math.Abs(transaction.NetCashAmount - allocation.NetAmount) <= 1D And
+                 Math.Abs(transaction.Price - allocation.Price) <= 1D And
+                String.Equals(transaction.AllocSettleCurr, allocation.SecurityCurrency.Trim, StringComparison.OrdinalIgnoreCase) Then
+
+                Return True
+            End If
+        Next
+
+        ' If the loop completes without finding a match, the transaction is not in the list.
+        Return False
+
+    End Function
+
+    ' This function searches for a confirmation file in a given folder based on a date.
+    ' It expects the file to be named in the format "Combined Match Agreed Allocations YYYY-Mon-DD ####.csv".
+    Public Function FindConfirmFile(ByVal dtccFolder As String, ByVal asOfDate As Date) As String
+        Try
+            ' Format the date to match the "YYYY-Mon-DD" pattern in the file name.
+            ' Example: 2025-Aug-25
+            Dim datePart As String = asOfDate.ToString("yyyy-MMM-dd")
+
+            ' Construct the expected file name prefix.
+            Dim searchPattern As String = "Combined Match Agreed Allocations " & datePart & "*.csv"
+
+            ' Use Directory.GetFiles to find all files in the folder that match the pattern.
+            ' SearchOption.TopDirectoryOnly means it will not search subfolders.
+            Dim matchingFiles As String() = Directory.GetFiles(dtccFolder, searchPattern, SearchOption.TopDirectoryOnly)
+
+            ' Check if any matching files were found.
+            If matchingFiles.Length > 0 Then
+                ' If multiple files are found, sort them in descending order to get the latest one.
+                ' We'll use a more robust method by extracting the time part and sorting on that.
+                Dim latestFile As String = matchingFiles.OrderByDescending(Function(f) GetTimeFromFileName(f)).First()
+
+                ' Return the full path of the latest file.
+                Return latestFile
+            Else
+                ' If no file is found, return an empty string.
+                Return String.Empty
+            End If
+
+        Catch ex As Exception
+            ' Catch any potential exceptions (e.g., folder not found) and throw a new one
+            ' with a descriptive message.
+            Throw New Exception("FindConfirmFile Exception: " & ex.Message, ex)
+        End Try
+    End Function
+
+    ' This helper function extracts the time from the file name.
+    Private Function GetTimeFromFileName(ByVal fileName As String) As String
+        Try
+            ' A regular expression to find the four-digit time stamp.
+            ' It looks for a sequence of four digits at the end of the filename
+            ' just before the ".csv" extension.
+            Dim timeRegex As New Regex("\d{4}(?=\.csv$)")
+            Dim match As Match = timeRegex.Match(fileName)
+
+            If match.Success Then
+                Return match.Value
+            Else
+                ' If no time is found, return an empty string or a default value.
+                Return String.Empty
+            End If
+        Catch ex As Exception
+            ' Catch any potential exceptions and return an empty string.
+            ' This prevents the main function from crashing if the regex fails.
+            Return String.Empty
+        End Try
+    End Function
+
+    ' This function reads a pipe-delimited file, finds the header, and
+    ' returns a list of DTCCTransaction objects.
+    Public Function ReadTransactionsFromFile(ByVal filePath As String, ByVal asOfDate As Date) As List(Of DTCCTransaction)
+        Dim transactions As New List(Of DTCCTransaction)()
+
+        Try
+            ' Read all lines from the file.
+            Dim lines As String() = File.ReadAllLines(filePath)
+            Dim headerIndex As Integer = -1
+
+            ' Find the header row by searching for "Exec Broker" and "Asset Class".
+            For i As Integer = 0 To lines.Length - 1
+                If lines(i).Contains("Exec Broker") AndAlso lines(i).Contains("Asset Class") Then
+                    headerIndex = i
+                    Exit For
+                End If
+            Next
+
+            ' If the header is not found, return an empty list.
+            If headerIndex = -1 Then
+                Return transactions
+            End If
+
+            ' Start reading transactions from the row after the header.
+            For i As Integer = headerIndex + 1 To lines.Length - 1
+                Dim line As String = lines(i)
+                If String.IsNullOrWhiteSpace(line) Then Continue For
+
+                ' Remove double quotes from the line before parsing.
+                line = line.Replace("""", String.Empty)
+
+                Dim fields As String() = line.Split("|"c)
+
+                ' Check if the line has a valid number of fields.
+                ' The header has 42 columns, so we expect at least that many.
+                If fields.Length >= 42 Then
+                    Dim price As Decimal = 0
+                    Decimal.TryParse(fields(5), price)
+
+                    Dim allocQty As Decimal = 0
+                    Decimal.TryParse(fields(8), allocQty)
+
+                    Dim trdAmt As Decimal = 0
+                    Decimal.TryParse(fields(9), trdAmt)
+
+                    Dim chargesTaxesFeesAmount1 As Decimal = 0
+                    Decimal.TryParse(fields(11), chargesTaxesFeesAmount1)
+
+                    Dim chargesTaxesFeesAmount2 As Decimal = 0
+                    Decimal.TryParse(fields(13), chargesTaxesFeesAmount2)
+
+                    Dim chargesTaxesFeesAmount3 As Decimal = 0
+                    Decimal.TryParse(fields(15), chargesTaxesFeesAmount3)
+
+                    Dim netCashAmount As Decimal = 0
+                    Decimal.TryParse(fields(22), netCashAmount)
+
+                    Dim settleAmount As Decimal = 0
+                    Decimal.TryParse(fields(23), settleAmount)
+
+                    Dim comm As Decimal = 0
+                    Decimal.TryParse(fields(41), comm)
+
+                    ' Create a new DTCCTransaction object with the parsed values.
+                    Dim transaction As New DTCCTransaction(
+                    fields(0), ' Exec Broker
+                    fields(1), ' Asset Class Sec Code
+                    fields(3), ' Security
+                    fields(4), ' TranCode
+                    price,
+                    fields(5), ' AcctID
+                    allocQty,
+                    trdAmt,
+                    chargesTaxesFeesAmount1,
+                    chargesTaxesFeesAmount2,
+                    chargesTaxesFeesAmount3,
+                    netCashAmount,
+                    settleAmount,
+                    fields(24), ' Alloc Settle Curr
+                    comm,
+                    asOfDate
+                )
+
+                    ' Add the object to the list.
+                    transactions.Add(transaction)
+                End If
+            Next
+
+        Catch ex As Exception
+            ' Re-throw a more descriptive exception.
+            Throw New Exception("Error reading transactions from file: " & ex.Message, ex)
+        End Try
+
+        Return transactions
+    End Function
+
+
+    ' This function reads a pipe-delimited file and automatically maps columns to a TradeAllocation object.
+    Public Function ReadTradeAllocationsFromFile(ByVal filePath As String) As List(Of TradeAllocation)
+        Dim allocations As New List(Of TradeAllocation)()
+
+        Try
+            Dim lines As String() = File.ReadAllLines(filePath)
+            Dim headerIndex As Integer = -1
+
+            For i As Integer = 0 To lines.Length - 1
+                If lines(i).Contains("Exec Broker") AndAlso lines(i).Contains("Asset Class") Then
+                    headerIndex = i
+                    Exit For
+                End If
+            Next
+
+            If headerIndex = -1 Then
+                Return allocations
+            End If
+
+            ' Sanitize header to create a map of sanitized names to column indices.
+            Dim headerLine As String = lines(headerIndex).Replace("""", String.Empty)
+            Dim rawHeaderFields As String() = headerLine.Split("|"c)
+
+            Dim columnMap As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+            For i As Integer = 0 To rawHeaderFields.Length - 1
+                ' Remove spaces, slashes, and dashes, then check if it's not empty.
+                Dim sanitizedName As String = rawHeaderFields(i).Replace(" ", "").Replace("/", "").Replace("-", "")
+                If Not String.IsNullOrWhiteSpace(sanitizedName) Then
+                    columnMap(sanitizedName) = i
+                End If
+            Next
+
+            Dim properties As PropertyInfo() = GetType(TradeAllocation).GetProperties()
+
+            For i As Integer = headerIndex + 1 To lines.Length - 1
+                Dim line As String = lines(i)
+                If String.IsNullOrWhiteSpace(line) Then Continue For
+
+                line = line.Replace("""", String.Empty)
+                Dim fields As String() = line.Split("|"c)
+
+                If fields.Length >= rawHeaderFields.Length Then
+                    Dim newAlloc As New TradeAllocation()
+
+                    ' Loop through the properties of the TradeAllocation class
+                    For Each prop As PropertyInfo In properties
+                        If columnMap.ContainsKey(prop.Name) Then
+                            Dim columnIndex As Integer = columnMap(prop.Name)
+                            Dim rawValue As String = fields(columnIndex)
+
+                            Try
+                                ' Convert the value to the property's type and assign it.
+                                Select Case prop.PropertyType.FullName
+                                    Case GetType(Decimal).FullName
+                                        Dim dVal As Decimal = 0
+                                        Decimal.TryParse(rawValue, dVal)
+                                        prop.SetValue(newAlloc, dVal)
+                                    Case GetType(Date).FullName
+                                        Dim dDate As Date
+                                        If Date.TryParse(rawValue, dDate) Then
+                                            prop.SetValue(newAlloc, dDate)
+                                        End If
+                                    Case Else ' Default to string
+                                        prop.SetValue(newAlloc, rawValue)
+                                End Select
+                            Catch ex As Exception
+                                ' Log the error without stopping the loop.
+                                ' For production, you might want more detailed logging.
+                                Console.WriteLine($"Error converting value '{rawValue}' for property '{prop.Name}': {ex.Message}")
+                            End Try
+                        End If
+                    Next
+                    allocations.Add(newAlloc)
+                End If
+            Next
+
+        Catch ex As Exception
+            Throw New Exception("Error reading transactions from file: " & ex.Message, ex)
+        End Try
+
+        Return allocations
+    End Function
+
+    ' This function reads Tweedy funds from app.config.
+    Public Function GetTweedyFunds() As Dictionary(Of String, String)
+
+        Dim fundMap As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Try
+
+            Dim fund1 As String = ReadConfigSetting("55090")
+            fundMap("55090") = fund1
+
+            Dim fund2 As String = ReadConfigSetting("55093")
+            fundMap("55093") = fund2
+
+            Dim fund3 As String = ReadConfigSetting("55095")
+            fundMap("55095") = fund3
+
+            Dim fund4 As String = ReadConfigSetting("55096")
+            fundMap("55096") = fund4
+
+
+        Catch ex As Exception
+            Throw New Exception("s from file: " & ex.Message, ex)
+        End Try
+
+        Return fundMap
+    End Function
+
+
 
     Public Function getFundTradingRecap(ByVal asOfDate As DateTime) As Integer
 
@@ -2906,5 +3346,26 @@ Endofloop:          Loop
         End Try
         Return (result)
     End Function
+
+    Public Shared Function ExecuteFundTradesRecapAllFundsReader(asOfDate As DateTime,
+                                                            moxyCon As String) As SqlDataReader
+        Dim conn As New SqlConnection(moxyCon)
+        Try
+            Dim cmd As New SqlCommand("usp_FundTradesRecapAllFunds", conn) With {
+            .CommandType = CommandType.StoredProcedure,
+            .CommandTimeout = 120
+        }
+            cmd.Parameters.Add("@rundate", SqlDbType.DateTime).Value = asOfDate
+
+            conn.Open()
+            ' CloseConnection ensures closing the reader will close the connection
+            Return cmd.ExecuteReader(CommandBehavior.CloseConnection)
+
+        Catch ex As Exception
+            conn.Dispose()
+            Throw New Exception("Error in ExecuteFundTradesRecapAllFundsReader: " & ex.Message)
+        End Try
+    End Function
+
 
 End Class

@@ -825,8 +825,8 @@ Public Class Form1
         allocStr = InputBox("Please enter the allocation date", "Request", Today())
         If allocStr = "" Then
             Return
-
         End If
+
         allocDate = allocStr
         If Not IsDate(allocDate) Then
             MsgBox("Not a valid allocation date", MsgBoxStyle.OkOnly)
@@ -839,7 +839,7 @@ Public Class Form1
         fName = outFolder + "\FT" + allocDate.ToString("MMddyy") + ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
         'rtn = fm.getFundTradingRecap(allocDate)
-        rtn = fm.getFundTradingRecapAllFunds(allocDate)
+        rtn = fm.getFundTradingRecapAllFunds(allocDate, False)
         If rtn <> -1 Then
             TextBox1.Text = "Created file " + fName
 
@@ -847,7 +847,16 @@ Public Class Form1
             TextBox1.Text += vbCrLf + "Failed to create file " + fName
         End If
 
+        fName = outFolder + "\FTWithDTCC" + allocDate.ToString("MMddyy") + ".xlsx"
+        fm = New FXConManager(fName, TextBox1, connStr, "")
+        'rtn = fm.getFundTradingRecap(allocDate)
+        rtn = fm.getFundTradingRecapAllFunds(allocDate, True)
+        If rtn <> -1 Then
+            TextBox1.Text += vbNewLine & "Created file " + fName
 
+        Else
+            TextBox1.Text += vbCrLf + "Failed to create file " + fName
+        End If
 
     End Sub
 

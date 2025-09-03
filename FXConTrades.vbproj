@@ -159,6 +159,9 @@
     </Compile>
     <Compile Include="GTSSObj.vb" />
     <Compile Include="MessageObj.vb" />
+    <Compile Include="Model\DTCCTransaction.vb" />
+    <Compile Include="Model\TradeAllocation.vb" />
+    <Compile Include="Model\Transaction.vb" />
     <Compile Include="ReportInfo.vb" />
     <EmbeddedResource Include="Form1.af-ZA.resx">
       <DependentUpon>Form1.vb</DependentUpon>
