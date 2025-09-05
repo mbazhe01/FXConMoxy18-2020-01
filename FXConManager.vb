@@ -1231,43 +1231,74 @@ Endofloop:          Loop
         ' Call the function to get the list of transactions.
         'Dim confirmsList As List(Of DTCCTransaction)
         Dim dtccTradesList As List(Of TradeAllocation)
+        Dim dtccTradeCnt As Integer = 0
         Try
 
             Dim DTCCFolder As String = ReadConfigSetting("DTCCConfirmsFolder")
 
+
             confirmFile = FindConfirmFile(DTCCFolder, asOfDate)
+
+            If confirmFile = String.Empty Then
+                screen.Text += vbCrLf + "No DTCC confirm file found for " + asOfDate.ToString("MM/dd/yyyy")
+                If includeDTCCConfirms Then
+                    Return -1
+                    'Else
+                    '    screen.Text += vbCrLf + "Will create Fund Trading Recap without DTCC confirms"
+                End If
+            Else
+                screen.Text += vbCrLf + "DTCC Confirm file found: " + confirmFile
+            End If
 
             'confirmsList = ReadTransactionsFromFile(confirmFile, asOfDate)
             dtccTradesList = ReadTradeAllocationsFromFile(confirmFile)
-            dtccTradesList.Sort(Function(a, b)
-                                    Dim result As Integer
-                                    ' First, compare by PortId
-                                    result = a.AcctID.CompareTo(b.AcctID)
-                                    ' If PortIds are the same, then compare by SecurityCurrency
-                                    If result = 0 Then
-                                        result = a.AllocSettleCurr.CompareTo(b.AllocSettleCurr)
-                                    End If
-                                    Return result
-                                End Function)
+
+
+
+            dtccTradesList = dtccTradesList _
+            .OrderBy(Function(t) If(t.AcctID, ""), StringComparer.OrdinalIgnoreCase) _
+            .ThenBy(Function(t) If(t.AllocSettleCurr, ""), StringComparer.OrdinalIgnoreCase) _
+            .ThenBy(Function(t) If(t.BS, ""), StringComparer.OrdinalIgnoreCase) _
+            .ToList()
+
             If File.Exists(fName) Then
                 File.Delete(fName)
             End If
 
-            'Dim Conn As New SqlConnection(moxyCon)
-            'Dim Cmd As New SqlCommand("usp_FundTradesRecapAllFunds", Conn)
-            'Cmd.CommandType = CommandType.StoredProcedure
-            'Dim Portfolio As New SqlParameter
-            'Dim param As New SqlParameter("@rundate", SqlDbType.DateTime)
-            'param.Direction = ParameterDirection.Input
-            'param.Value = asOfDate
-
-            'Cmd.Parameters.Add(param)
-
-            'Conn.Open()
-            'Dim myReader As SqlDataReader = Cmd.ExecuteReader()
 
             Dim myReader As SqlDataReader = ExecuteFundTradesRecapAllFundsReader(asOfDate, moxyCon)
 
+            ' Create a list to hold the transaction objects from Moxy.
+            Dim transactions As New List(Of Transaction)()
+            While myReader.Read()
+
+                ' Create a new Transaction object and populate it from the reader using the constructor
+                Dim transaction As New Transaction(
+                        myReader.GetValue(3).ToString,
+                        myReader.GetValue(5).ToString,
+                        myReader.GetValue(1).ToString,
+                        Convert.ToDecimal(myReader.GetValue(6)),
+                        Convert.ToDecimal(myReader.GetValue(11)),
+                        myReader.GetValue(12).ToString,
+                        myReader.GetValue(19).ToString,
+                        CDate(myReader.GetValue(4)),
+                        CDate(myReader.GetValue(17)),
+                        Convert.ToDecimal(myReader.GetValue(22)),
+                        myReader.GetValue(18).ToString,
+                        myReader.GetValue(23).ToString,
+                        Convert.ToDecimal(myReader.GetValue(8)),
+                        Convert.ToDecimal(myReader.GetValue(24)),
+                        myReader.GetValue(15).ToString,
+                        myReader.GetValue(2).ToString,
+                        myReader.GetValue(20).ToString,
+                        myReader.GetValue(16).ToString, ' sedol
+                        myReader.GetValue(25).ToString(),' reflow flag,
+                        myReader.GetValue(26).ToString() ' lot selection method
+                    )
+
+                ' Add the new Transaction object to the list.
+                transactions.Add(transaction)
+            End While
 
             ' create a new excel file
             Dim oXL As New Excel.Application
@@ -1312,48 +1343,12 @@ Endofloop:          Loop
 
             rowNum = 7
 
-            ' Create a list to hold the transaction objects from Moxy.
-            Dim transactions As New List(Of Transaction)()
-            While myReader.Read()
 
-                ' Create a new Transaction object and populate it from the reader using the constructor
-                Dim transaction As New Transaction(
-                        myReader.GetValue(3).ToString,
-                        myReader.GetValue(5).ToString,
-                        myReader.GetValue(1).ToString,
-                        Convert.ToDecimal(myReader.GetValue(6)),
-                        Convert.ToDecimal(myReader.GetValue(11)),
-                        myReader.GetValue(12).ToString,
-                        myReader.GetValue(19).ToString,
-                        CDate(myReader.GetValue(4)),
-                        CDate(myReader.GetValue(17)),
-                        Convert.ToDecimal(myReader.GetValue(22)),
-                        myReader.GetValue(18).ToString,
-                        myReader.GetValue(23).ToString,
-                        Convert.ToDecimal(myReader.GetValue(8)),
-                        Convert.ToDecimal(myReader.GetValue(24)),
-                        myReader.GetValue(15).ToString,
-                        myReader.GetValue(2).ToString,
-                        myReader.GetValue(20).ToString,
-                        myReader.GetValue(16).ToString, ' sedol
-                myReader.GetValue(25).ToString(),' reflow flag,
-                myReader.GetValue(26).ToString() ' lot selection method
-                    )
-
-                ' Add the new Transaction object to the list.
-                transactions.Add(transaction)
-            End While
-
-            transactions.Sort(Function(a, b)
-                                  Dim result As Integer
-                                  ' First, compare by PortId
-                                  result = a.PortId.CompareTo(b.PortId)
-                                  ' If PortIds are the same, then compare by SecurityCurrency
-                                  If result = 0 Then
-                                      result = a.SecurityCurrency.CompareTo(b.SecurityCurrency)
-                                  End If
-                                  Return result
-                              End Function)
+            transactions = transactions _
+            .OrderBy(Function(t) If(t.PortId, ""), StringComparer.OrdinalIgnoreCase) _
+            .ThenBy(Function(t) If(t.SecurityCurrency, ""), StringComparer.OrdinalIgnoreCase) _
+            .ThenBy(Function(t) If(t.TranCode, ""), StringComparer.OrdinalIgnoreCase) _
+            .ToList()
 
             For Each transaction As Transaction In transactions
 
@@ -1394,7 +1389,7 @@ Endofloop:          Loop
             Next
 
 
-            myReader.Close()
+            'myReader.Close()
 
             rowNum += 1
 
@@ -1411,6 +1406,7 @@ Endofloop:          Loop
                     Dim fund As String
                     Try
                         fund = fundMap(transaction.AcctID)
+                        dtccTradeCnt += 1
                     Catch ex As Exception
                         Continue For
                     End Try
@@ -1439,7 +1435,6 @@ Endofloop:          Loop
                     worksheet.Cells(rowNum, co3.getNext()) = transaction.AcctID
                     worksheet.Cells(rowNum, co3.getNext()) = transaction.SecCode
 
-
                     If moxyMatchFound Then
                         worksheet.Range(worksheet.Cells(rowNum, 1), worksheet.Cells(rowNum, 2)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
                         worksheet.Range(worksheet.Cells(rowNum, 4), worksheet.Cells(rowNum, 5)).Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGreen)
@@ -1451,6 +1446,14 @@ Endofloop:          Loop
                 Next
             End If
 
+            rowNum += 1
+            If dtccTradeCnt > 0 And transactions.Count >= 0 And includeDTCCConfirms Then
+                If dtccTradeCnt = transactions.Count Then
+                    worksheet.Cells(rowNum, 2) = "Trades Counts Match: " & dtccTradeCnt & " : " & transactions.Count
+                Else
+                    worksheet.Cells(rowNum, 2) = "Trades Counts Do Not Match: " & dtccTradeCnt & " : " & transactions.Count
+                End If
+            End If
 
             ' save generated Excel file
             worksheet.Columns.AutoFit()
@@ -1470,10 +1473,7 @@ Endofloop:          Loop
 
     End Function
 
-    Public Sub ColorCell(startCell As Excel.Range, Optional fill As Color = Nothing)
-        If fill = Nothing Then fill = Color.LightGreen
-        startCell.Interior.Color = ColorTranslator.ToOle(fill)
-    End Sub
+
     ''' <summary>
     ''' Checks if a Transaction object is present in a list of TradeAllocation objects based on key properties.
     ''' </summary>
@@ -1481,6 +1481,8 @@ Endofloop:          Loop
     ''' <param name="allocationList">The list of TradeAllocation objects to search in.</param>
     ''' <returns>True if a match is found, otherwise False.</returns>
     Public Function IsTransactionInAllocationList(ByVal transaction As TradeAllocation, ByVal allocationList As List(Of Transaction)) As Boolean
+
+        Dim netFees As Decimal = transaction.Comm + transaction.Fees + transaction.CommAmount1 + transaction.CommAmount2 + transaction.CommAmount3
 
         Dim tranCode As String = transaction.BS.Trim().ToLower()
 
@@ -1502,9 +1504,10 @@ Endofloop:          Loop
             If String.Equals(transaction.AcctID, allocation.PortId, StringComparison.OrdinalIgnoreCase) And
                     String.Equals(tranCode, allocation.TranCode, StringComparison.OrdinalIgnoreCase) And
                 String.Equals(transaction.SecCode, allocation.Isin, StringComparison.OrdinalIgnoreCase) And
-                    Math.Abs(transaction.QtyAlloc - quantity) <= 0.01D And
+                    Math.Abs(transaction.QtyAlloc - quantity) = 0.0D And
                  Math.Abs(transaction.NetCashAmount - allocation.NetAmount) <= 1D And
-                 Math.Abs(transaction.Price - allocation.Price) <= 1D And
+                 Math.Abs(transaction.Price - allocation.Price) <= 0.01D And
+                  Math.Abs(netFees - allocation.NetFees) <= 0.01D And
                 String.Equals(transaction.AllocSettleCurr, allocation.SecurityCurrency.Trim, StringComparison.OrdinalIgnoreCase) Then
 
                 Return True
@@ -2517,8 +2520,6 @@ Endofloop:          Loop
             End If
 
             Dim Conn As New SqlConnection(moxyCon)
-
-
             Dim Cmd As New SqlCommand("usp_TradeingRecapDaily", Conn)
             Cmd.CommandType = CommandType.StoredProcedure
             Dim PortDate As New SqlParameter

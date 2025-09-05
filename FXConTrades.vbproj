@@ -184,6 +184,7 @@
     <Content Include="VersionChanges.txt" />
   </ItemGroup>
   <ItemGroup>
+    <Folder Include="DTO\" />
     <Folder Include="My Project\" />
   </ItemGroup>
   <ItemGroup>

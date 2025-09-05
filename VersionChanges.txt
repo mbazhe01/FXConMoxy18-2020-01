@@ -25,3 +25,5 @@ This app is created to work with Moxy 18.
 12/10/2020 Switch data source for Offshore Funds Recaps from Moxy to Portia
 
 08/25/2025 Fund Trading Recap - match DTCC trades with Moxy
+
+09/03/2025 Trading Recap - match DTCC trades with Moxy 

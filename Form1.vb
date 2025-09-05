@@ -1,12 +1,13 @@
-Imports System.Data.SqlClient
-Imports System
+﻿Imports System
+Imports System.Collections.Generic
 Imports System.ComponentModel
-Imports Microsoft.VisualBasic
+Imports System.Configuration
+Imports System.Data.SqlClient
+Imports System.Globalization
 Imports System.IO
 Imports System.Security.Principal
 Imports Microsoft.Office.Interop
-Imports System.Configuration
-Imports System.Collections.Generic
+Imports Microsoft.VisualBasic
 
 ' Last Update: 07/17/2012
 ' Application is integrated with .Net 4, Excel 2007
@@ -821,6 +822,9 @@ Public Class Form1
         Dim allocDate As DateTime
         Dim allocStr As String
         Dim rtn As Integer
+
+        TextBox1.Clear()
+
         ' Ask user to enter the trade date
         allocStr = InputBox("Please enter the allocation date", "Request", Today())
         If allocStr = "" Then
@@ -833,23 +837,28 @@ Public Class Form1
             Return
         End If
 
-
+        TextBox1.Text += allocStr + vbCrLf
         Dim outFolder As String = ReadConfigSetting("FundTradingRecapFolder")
+        TextBox1.Text += vbCrLf + "Output folder: " + outFolder
 
         fName = outFolder + "\FT" + allocDate.ToString("MMddyy") + ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
         'rtn = fm.getFundTradingRecap(allocDate)
+
+        TextBox1.Text += vbCrLf + "Generating funds recap without DTCC trades..."
         rtn = fm.getFundTradingRecapAllFunds(allocDate, False)
         If rtn <> -1 Then
-            TextBox1.Text = "Created file " + fName
+            TextBox1.Text += vbCrLf + "Created file " + fName
 
         Else
             TextBox1.Text += vbCrLf + "Failed to create file " + fName
         End If
 
-        fName = outFolder + "\FTWithDTCC" + allocDate.ToString("MMddyy") + ".xlsx"
+
+        fName = outFolder + "\RecapsWithDTCC" + "\FTWithDTCC" + allocDate.ToString("MMddyy") + ".xlsx"
         fm = New FXConManager(fName, TextBox1, connStr, "")
         'rtn = fm.getFundTradingRecap(allocDate)
+        TextBox1.Text += vbCrLf + "Generating funds recap with DTCC trades..."
         rtn = fm.getFundTradingRecapAllFunds(allocDate, True)
         If rtn <> -1 Then
             TextBox1.Text += vbNewLine & "Created file " + fName
@@ -862,7 +871,6 @@ Public Class Form1
 
     Private Sub Form1_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
         Me.Text += " DB Con: " + connStr
-
     End Sub
 
 
@@ -871,31 +879,37 @@ Public Class Form1
     '
     Private Sub Button1_Click_1(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles Button1.Click
         Dim fName As String
-        Dim allocDate As DateTime
-        Dim allocStr As String
+        'Dim allocStr As String
         Dim rtn As Integer
+        Dim allocDate As DateTime? = PromptForDate("Please enter the allocation date (MM/DD/YYYY):", "Request")
+        '' Ask user to enter the trade date
+        'allocStr = InputBox("Please enter the allocation date", "Request", Today())
 
-        ' Ask user to enter the trade date
-        allocStr = InputBox("Please enter the allocation date", "Request", Today())
+        'If allocStr = "" Then
+        '    ' user Cancel dialog
+        '    Return
+        'Else
+        '    allocDate = allocStr
+        'End If
 
-        If allocStr = "" Then
-            ' user Cancel dialog
-            Return
-        Else
-            allocDate = allocStr
+        'If Not IsDate(allocDate) Then
+        '    MsgBox("Not a valid allocation date", MsgBoxStyle.OkOnly)
+        '    Return
+        'End If
+
+
+
+        If allocDate Is Nothing Then
+            ' user cancelled or invalid → stop
+            Exit Sub
         End If
-
-        If Not IsDate(allocDate) Then
-            MsgBox("Not a valid allocation date", MsgBoxStyle.OkOnly)
-            Return
-        End If
-
+        Dim selectedDate As DateTime = allocDate.Value
         Dim recapFolder As String = ReadConfigSetting("RecapFolder")
 
         ' Trading Recap Domestic
-        fName = recapFolder + "\TradingRecap_" + allocDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder + "\TradingRecap_" + selectedDate.ToString("MMddyy") + ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
-        rtn = fm.getPortfolioRecap(allocDate)
+        rtn = fm.getPortfolioRecap(selectedDate)
         If rtn <> -1 Then
             TextBox1.Text = "Created file " + fName + vbCrLf
         Else
@@ -903,9 +917,9 @@ Public Class Form1
         End If
         Application.DoEvents()
         'Trading Recap International
-        fName = recapFolder + "\TradingRecapInternational_" + allocDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder + "\TradingRecapInternational_" + selectedDate.ToString("MMddyy") + ".xlsx"
         Dim fm1 As New FXConManager(fName, TextBox1, connStr, "")
-        rtn = fm1.getPortfolioRecapInternational(allocDate)
+        rtn = fm1.getPortfolioRecapInternational(selectedDate)
         If rtn <> -1 Then
             TextBox1.Text += "Created file " + fName
 
@@ -914,6 +928,36 @@ Public Class Form1
         End If
     End Sub
 
+
+    ' Reusable prompt that returns Nothing on cancel/invalid
+    Private Function PromptForDate(prompt As String, title As String) As DateTime?
+        Dim defaultText As String = DateTime.Today.ToString("MM/dd/yyyy", CultureInfo.InvariantCulture)
+        Dim input As String = InputBox(prompt, title, defaultText)
+
+        If String.IsNullOrWhiteSpace(input) Then
+            ' Cancel / closed dialog
+            Return Nothing
+        End If
+
+        Dim parsed As DateTime
+        Dim formats() As String = {"M/d/yyyy", "MM/dd/yyyy", "yyyy-MM-dd"} ' add more if you like
+
+        If DateTime.TryParseExact(
+            input.Trim(),
+            formats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeLocal Or DateTimeStyles.AllowWhiteSpaces,
+            parsed) Then
+
+            Return parsed.Date   ' normalize to date-only
+        End If
+
+        MessageBox.Show("Not a valid allocation date. Please use MM/DD/YYYY.",
+                    "Invalid date",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning)
+        Return Nothing
+    End Function
 
     Private Sub ButtonHedgeExposure_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles ButtonHedgeExposure.Click
         Dim fName As String

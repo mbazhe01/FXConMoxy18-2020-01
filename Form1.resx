@@ -277,7 +277,7 @@
     <value>8</value>
   </data>
   <data name="btnFundTrades.Location" type="System.Drawing.Point, System.Drawing">
-    <value>247, 416</value>
+    <value>247, 419</value>
   </data>
   <data name="btnFundTrades.Size" type="System.Drawing.Size, System.Drawing">
     <value>153, 23</value>
@@ -328,7 +328,7 @@
     <value>17, 17</value>
   </metadata>
   <data name="ButtonHedgeExposure.Location" type="System.Drawing.Point, System.Drawing">
-    <value>248, 477</value>
+    <value>247, 477</value>
   </data>
   <data name="ButtonHedgeExposure.Size" type="System.Drawing.Size, System.Drawing">
     <value>152, 23</value>
@@ -430,7 +430,7 @@
     <value>2</value>
   </data>
   <data name="btnCreateGTSSFile.Location" type="System.Drawing.Point, System.Drawing">
-    <value>438, 418</value>
+    <value>438, 421</value>
   </data>
   <data name="btnCreateGTSSFile.Size" type="System.Drawing.Size, System.Drawing">
     <value>146, 21</value>
