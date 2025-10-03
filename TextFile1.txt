@@ -1,210 +1,37 @@
-
-    Public Function getFundTradingRecapAllFunds(ByVal asOfDate As DateTime) As Integer
-        Dim rtn As Integer = 0
-        Dim objOpt As Object = System.Reflection.Missing.Value
-        Dim rowNum As Integer = 0
-        Dim confirmFile As String
-        ' Call the function to get the list of transactions.
-        'Dim confirmsList As List(Of DTCCTransaction)
-        Dim dtccTradesList As List(Of TradeAllocation)
-        Try
-
-            Dim DTCCFolder As String = ReadConfigSetting("DTCCConfirmsFolder")
-
-            confirmFile = FindConfirmFile(DTCCFolder, asOfDate)
-
-            'confirmsList = ReadTransactionsFromFile(confirmFile, asOfDate)
-            dtccTradesList = ReadTradeAllocationsFromFile(confirmFile)
-
-            If File.Exists(fName) Then
-                File.Delete(fName)
-            End If
-
-            Dim Conn As New SqlConnection(moxyCon)
-            Dim Cmd As New SqlCommand("usp_FundTradesRecapAllFunds", Conn)
-            Cmd.CommandType = CommandType.StoredProcedure
-            Dim Portfolio As New SqlParameter
-            'Dim PortDate As New SqlParameter
-            'PortDate = Cmd.Parameters.Add("@asofdate", SqlDbType.DateTime)
-            'PortDate.Direction = ParameterDirection.Input
-            'PortDate.Value = asOfDate
-            Dim param As New SqlParameter("@rundate", SqlDbType.DateTime)
-            param.Direction = ParameterDirection.Input
-            param.Value = asOfDate
-
-
-            Cmd.Parameters.Add(param)
-
-            Conn.Open()
-            Dim myReader As SqlDataReader = Cmd.ExecuteReader()
-
-            ' create a new excel file
-            Dim oXL As New Excel.Application
-            Dim theWorkbook As Excel.Workbook
-            Dim worksheet As Excel.Worksheet
-
-            theWorkbook = oXL.Workbooks.Add(objOpt)
-            worksheet = theWorkbook.ActiveSheet
-
-            ' create header
-            worksheet.Cells(1, 1) = "Trade Date"
-            ' Sets the cell format to text
-            worksheet.Cells(1, 2).NumberFormat = "@"
-            worksheet.Cells(1, 2) = asOfDate.ToString("MM/dd/yyyy") & Space(5)
-
-            worksheet.Cells(2, 1) = "Authorized by"
-            worksheet.Cells(2, 2) = "AM"
-
-            Dim co As New CounterObj()
-            worksheet.Cells(5, co.getNext()) = "Buy/Sell"
-            worksheet.Cells(5, co.getNext()) = "SHS"
-            worksheet.Cells(5, co.getNext()) = "Description"
-            worksheet.Cells(5, co.getNext()) = "Price"
-            worksheet.Cells(5, co.getNext()) = "Net Amount"
-            worksheet.Cells(5, co.getNext()) = "Broker"
-            worksheet.Cells(5, co.getNext()) = "Posted T+1"
-            worksheet.Cells(5, co.getNext()) = "BNY Initial"
-            worksheet.Cells(5, co.getNext()) = "Fund"
-            worksheet.Cells(5, co.getNext()) = "Identifier"
-            worksheet.Cells(5, co.getNext()) = "Security Currency"
-            worksheet.Cells(5, co.getNext()) = "Trade Date"
-            worksheet.Cells(5, co.getNext()) = "Settle Date"
-            worksheet.Cells(5, co.getNext()) = "Net Fees"
-            worksheet.Cells(5, co.getNext()) = "Broker Name"
-            worksheet.Cells(5, co.getNext()) = "Cusip"
-            worksheet.Cells(5, co.getNext()) = "Commission"
-            worksheet.Cells(5, co.getNext()) = "Other Fees"
-            worksheet.Cells(5, co.getNext()) = "Reflow Flag"
-            worksheet.Cells(5, co.getNext()) = "Lot Selection Method"
-            worksheet.Cells(5, co.getNext()) = "Port Id"
-            worksheet.Cells(5, co.getNext()) = "ISIN"
-
-            rowNum = 7
-            ' Column order in DataReader:
-            '   0 - orderid, 1 - shortname (security), 2 - ISIN,
-            '   3 - trancode, 4 - tradedate, 5 - allocqty,
-            '   6 - allocprice, 7 - principal, 8 - commission,
-            '   9 - secfee, 10 - otherfee, 11 - totalamount,
-            '  12 - brokerid, 13 - tktchrg, 14 - fxrate
-            '   20 - fund, 23 - cusip, 
-
-
-            ' Create a list to hold the transaction objects from Moxy.
-            Dim transactions As New List(Of Transaction)()
-
-            While myReader.Read()
-                ' Create a new Transaction object and populate it from the reader using the constructor
-                Dim transaction As New Transaction(
-                    myReader.GetValue(3).ToString,
-                    myReader.GetValue(5).ToString,
-                    myReader.GetValue(1).ToString,
-                    Convert.ToDecimal(myReader.GetValue(6)),
-                    Convert.ToDecimal(myReader.GetValue(11)),
-                    myReader.GetValue(12).ToString,
-                    myReader.GetValue(19).ToString,
-                    CDate(myReader.GetValue(4)),
-                    CDate(myReader.GetValue(17)),
-                    Convert.ToDecimal(myReader.GetValue(22)),
-                    myReader.GetValue(18).ToString,
-                    myReader.GetValue(23).ToString,
-                    Convert.ToDecimal(myReader.GetValue(8)),
-                    Convert.ToDecimal(myReader.GetValue(24)),
-                    myReader.GetValue(15).ToString,
-                    myReader.GetValue(2).ToString,
-                    myReader.GetValue(20).ToString
-                )
-
-                ' Add the new Transaction object to the list.
-                transactions.Add(transaction)
-                Dim co2 As New CounterObj()
-                ' Now assign the Transaction object's properties to the worksheet cells
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.TranCode
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Quantity
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Description
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Price
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.NetAmount
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.BrokerId
-                worksheet.Cells(rowNum, co2.getNext()) = String.Empty
-                worksheet.Cells(rowNum, co2.getNext()) = String.Empty
-
-                'worksheet.Cells(rowNum, co2.getNext()) = transaction.SecurityCurrency
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Fund
-
-                ' prevent excel to drop leading zeros
-                Dim colNum As Int16 = co2.getNext()
-                worksheet.Cells.NumberFormat = "@"
-                worksheet.Cells(rowNum, colNum) = myReader.GetValue(16).ToString ' sedol
-
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.SecurityCurrency
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.TradeDate
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.SettleDate
-
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.NetFees
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.BrokerName
-
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Cusip
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Commission
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.OtherFees
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(25).ToString ' reflow flag
-                worksheet.Cells(rowNum, co2.getNext()) = myReader.GetValue(26).ToString ' lot selection method
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.PortId
-                worksheet.Cells(rowNum, co2.getNext()) = transaction.Isin
-                rowNum += 1
-            End While
-            myReader.Close()
-            rowNum += 1
-
-            ' DTCC confirms
-            worksheet.Cells(rowNum, 1) = "DTCC Confirms"
-            rowNum += 1
-            If dtccTradesList IsNot Nothing AndAlso dtccTradesList.Count > 0 Then
-
-                Dim fundMap As Dictionary(Of String, String) = GetTweedyFunds()
-
-                For Each transaction As TradeAllocation In dtccTradesList
-                    Dim fund As String
-                    Try
-                        fund = fundMap(transaction.AcctID)
-                    Catch ex As Exception
-                        Continue For
-                    End Try
-
-                    Dim co3 As New CounterObj()
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.BS
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.QtyAlloc
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Security
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Price
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.NetCashAmount
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.ExecBroker
-                    worksheet.Cells(rowNum, co3.getNext()) = String.Empty
-                    worksheet.Cells(rowNum, co3.getNext()) = String.Empty
-
-                    worksheet.Cells(rowNum, co3.getNext()) = fund
-                    worksheet.Cells(rowNum, co3.getNext()) = "Identifier"
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.AllocSettleCurr
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.TradeDate
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.SettleDate
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.Comm + transaction.Fees + transaction.CommAmount1 + transaction.CommAmount2 + transaction.CommAmount3
-                    worksheet.Cells(rowNum, co3.getNext()) = transaction.ExecBroker
-                    rowNum += 1
-                Next
-            End If
-
-
-            ' save generated Excel file
-            worksheet.Columns.AutoFit()
-            theWorkbook.SaveAs(fName, objOpt, objOpt, objOpt, objOpt, objOpt, Excel.XlSaveAsAccessMode.xlShared, objOpt, objOpt, objOpt, objOpt, objOpt)
-            theWorkbook.Close(False, objOpt, objOpt)
-
-            oXL.Quit()
-
-            myReader.Close()
-            Conn.Close()
-
-            Return 1
-        Catch ex As Exception
-            screen.Text += vbCrLf + ex.Message
-            Return -1
-        End Try
-
-    End Function
+Columns from Moxy Allocation: 18
+Column: orderid
+   Type: System.Int32
+Column: PortId
+   Type: System.String
+Column: PortName
+   Type: System.String
+Column: ShortName
+   Type: System.String
+Column: ISIN
+   Type: System.String
+Column: TranCode
+   Type: System.String
+Column: TradeDate
+   Type: System.String
+Column: AllocQty
+   Type: System.Double
+Column: AllocPrice
+   Type: System.Double
+Column: Principal
+   Type: System.Double
+Column: Commission
+   Type: System.Double
+Column: SECFee
+   Type: System.Double
+Column: OtherFee
+   Type: System.Double
+Column: TotalAmount
+   Type: System.Double
+Column: Broker
+   Type: System.String
+Column: TktChrg
+   Type: System.Double
+Column: FXRate
+   Type: System.Double
+Column: SettleDate
+   Type: System.String

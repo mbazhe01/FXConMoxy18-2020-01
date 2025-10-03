@@ -6,4 +6,9 @@
         Return count
     End Function
 
+    Public Sub reset()
+        count = 0
+
+    End Sub
+
 End Class

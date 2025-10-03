@@ -8,6 +8,8 @@ Imports System.IO
 Imports System.Security.Principal
 Imports Microsoft.Office.Interop
 Imports Microsoft.VisualBasic
+Imports System.Windows.Forms
+Imports System.Drawing
 
 ' Last Update: 07/17/2012
 ' Application is integrated with .Net 4, Excel 2007
@@ -867,6 +869,10 @@ Public Class Form1
             TextBox1.Text += vbCrLf + "Failed to create file " + fName
         End If
 
+        TextBox1.SelectionStart = TextBox1.TextLength
+        TextBox1.SelectionLength = 0
+        TextBox1.ScrollToCaret()
+
     End Sub
 
     Private Sub Form1_Load(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles MyBase.Load
@@ -881,33 +887,21 @@ Public Class Form1
         Dim fName As String
         'Dim allocStr As String
         Dim rtn As Integer
-        Dim allocDate As DateTime? = PromptForDate("Please enter the allocation date (MM/DD/YYYY):", "Request")
-        '' Ask user to enter the trade date
-        'allocStr = InputBox("Please enter the allocation date", "Request", Today())
+        'Dim allocDate As DateTime? = PromptForDate("Please enter the allocation date (MM/DD/YYYY):", "Request")
+        Dim allocDate As Date? = PromptForDate("Please select the allocation date :", "Request", initial:=Date.Today)
 
-        'If allocStr = "" Then
-        '    ' user Cancel dialog
-        '    Return
-        'Else
-        '    allocDate = allocStr
-        'End If
-
-        'If Not IsDate(allocDate) Then
-        '    MsgBox("Not a valid allocation date", MsgBoxStyle.OkOnly)
-        '    Return
-        'End If
-
-
-
-        If allocDate Is Nothing Then
-            ' user cancelled or invalid → stop
+        If Not allocDate.HasValue Then
+            ' user cancelled
             Exit Sub
         End If
-        Dim selectedDate As DateTime = allocDate.Value
+
+        Dim selectedDate? As Date = allocDate.Value
+        Dim selectedDateStr As String = selectedDate.Value.ToString("MMddyy")
         Dim recapFolder As String = ReadConfigSetting("RecapFolder")
 
+
         ' Trading Recap Domestic
-        fName = recapFolder + "\TradingRecap_" + selectedDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder & "\TradingRecap_" & selectedDateStr & ".xlsx"
         Dim fm As New FXConManager(fName, TextBox1, connStr, "")
         rtn = fm.getPortfolioRecap(selectedDate)
         If rtn <> -1 Then
@@ -917,7 +911,7 @@ Public Class Form1
         End If
         Application.DoEvents()
         'Trading Recap International
-        fName = recapFolder + "\TradingRecapInternational_" + selectedDate.ToString("MMddyy") + ".xlsx"
+        fName = recapFolder + "\TradingRecapInternational_" + selectedDateStr + ".xlsx"
         Dim fm1 As New FXConManager(fName, TextBox1, connStr, "")
         rtn = fm1.getPortfolioRecapInternational(selectedDate)
         If rtn <> -1 Then
@@ -925,6 +919,14 @@ Public Class Form1
 
         Else
             TextBox1.Text += vbCrLf + "Failed to create file " + fName
+        End If
+
+        rtn = fm1.getPortfolioRecapInternationalDTCC(selectedDate)
+        If rtn <> -1 Then
+            'TextBox1.Text += "Created DTCC comparison file "
+
+        Else
+            TextBox1.Text += vbCrLf + "Failed to create DTCC comparison file "
         End If
     End Sub
 
@@ -958,6 +960,58 @@ Public Class Form1
                     MessageBoxIcon.Warning)
         Return Nothing
     End Function
+
+
+
+
+    Private Function PromptForDate(
+    prompt As String,
+    title As String,
+    Optional initial As Date? = Nothing,
+    Optional min As Date? = Nothing,
+    Optional max As Date? = Nothing,
+    Optional owner As IWin32Window = Nothing
+) As Date?
+
+        Using dlg As New Form()
+            dlg.Text = If(String.IsNullOrWhiteSpace(title), "Select Date", title)
+            dlg.FormBorderStyle = FormBorderStyle.FixedDialog
+            dlg.MaximizeBox = False
+            dlg.MinimizeBox = False
+            dlg.ShowInTaskbar = False
+            dlg.StartPosition = FormStartPosition.CenterParent
+            dlg.ClientSize = New Size(360, 140)
+
+            Dim lbl As New Label() With {
+            .AutoSize = False,
+            .Text = If(String.IsNullOrWhiteSpace(prompt), "Please select a date:", prompt),
+            .Bounds = New Rectangle(12, 12, 336, 40)
+        }
+
+            Dim dtp As New DateTimePicker() With {
+            .Format = DateTimePickerFormat.Short,
+            .Bounds = New Rectangle(12, 60, 150, 24)
+        }
+            If initial.HasValue Then dtp.Value = initial.Value
+            If min.HasValue Then dtp.MinDate = min.Value
+            If max.HasValue Then dtp.MaxDate = max.Value
+
+            Dim btnOK As New Button() With {.Text = "OK", .DialogResult = DialogResult.OK, .Bounds = New Rectangle(192, 92, 75, 28)}
+            Dim btnCancel As New Button() With {.Text = "Cancel", .DialogResult = DialogResult.Cancel, .Bounds = New Rectangle(273, 92, 75, 28)}
+
+            dlg.AcceptButton = btnOK
+            dlg.CancelButton = btnCancel
+            dlg.Controls.AddRange({lbl, dtp, btnOK, btnCancel})
+
+            Dim result = If(owner Is Nothing, dlg.ShowDialog(), dlg.ShowDialog(owner))
+            If result = DialogResult.OK Then
+                Return dtp.Value.Date
+            Else
+                Return Nothing
+            End If
+        End Using
+    End Function
+
 
     Private Sub ButtonHedgeExposure_Click(ByVal sender As System.Object, ByVal e As System.EventArgs) Handles ButtonHedgeExposure.Click
         Dim fName As String
@@ -1126,7 +1180,6 @@ Public Class Form1
 
     End Sub
 
-
     '
     ' read properties of .config file
     '
@@ -1183,5 +1236,20 @@ Public Class Form1
         End If
         frmDialog.Dispose()
 
+    End Sub
+
+    Private Sub Button_FXConPreAlloc_AutoSizeChanged(sender As Object, e As EventArgs) Handles Button_FXConPreAlloc.AutoSizeChanged
+
+    End Sub
+
+    Private Sub Form1_Shown(sender As Object, e As EventArgs) Handles MyBase.Shown
+        ' Re-center AFTER the form has finished sizing/layout
+        Me.StartPosition = FormStartPosition.Manual
+
+        Dim wa As Rectangle = Screen.FromControl(Me).WorkingArea  ' or Screen.FromPoint(Cursor.Position).WorkingArea
+        Dim x As Integer = wa.Left + (wa.Width - Me.Width) \ 2
+        Dim y As Integer = wa.Top + (wa.Height - Me.Height) \ 2
+
+        Me.Location = New Point(x, y)
     End Sub
 End Class
